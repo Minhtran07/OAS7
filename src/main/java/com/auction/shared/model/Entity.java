@@ -1,4 +1,4 @@
 package com.auction.shared.model;
 
-abstract class Entity {
+public class Entity {
 }

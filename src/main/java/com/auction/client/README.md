@@ -1,24 +1,30 @@
 # Các mục sẽ làm giao diện (Khả năng)
 ## 1. Authentication
-
+- **Đăng nhập / Đăng ký -> Authentication.fxml**
 - **Login.fxml**
-    - **Nhập username/password**
+    - **Nhập username/email**
+    - **Nhập password (dạng ẩn)**
     - **Nút đăng nhập**
 
 - **Register.fxml**
+    - **Nhập thông tin (Họ tên, Email, SDT)**
     - **Đăng ký user mới(Bidder/Seller)**
+    - **Nút tạo tài khoản**
 
-## 2. Trang chi tiết sản phầm
+## 2. Trang chi tiết sản phẩm
 
 - **AuctionList.fxml**
 - **Hiển thị**
-    - **Thông tin item (ảnh, mô tả, giá khởi điểm)**
-    - **Giá hiện tại (realtime)**
-    - **Lịch sử bid**
-- **Chức năng**
-    - **Nhập giá để bid**
-    - **Auto-bid(nếu có)**
-    - **Hiển thị người đang dẫn đầu**
+    - **ImageView (Có icon/chức năng Zoom)**
+    - **Thông tin item (ảnh, mô tả, giá khởi điểm, khoảng giá)**
+    - **Thời gian bắt đầu-kết thúc**
+    - **Place bid (chuyển sang LiveBid/ Register to bid đối với chưa đăng nhập**
+- **LiveBidding.fxml**
+    - **Đồng hồ đếm ngược realtime**
+    - **Label: Giá cược cao nhất hiện tại**
+    - **TextField/Spinner: Nhập số tiền muốn bid (gợi ý sẵn bước giá hợp lệ)/Auto-Bid**
+    - **Place Bid**
+    - **List View: Danh sách lịch sử bid (Xếp hạng, tên Bidder, thời gian, số tiền,...)**
 
 ## 3. Trang danh sách đấu giá (Home/ Auction List)
 

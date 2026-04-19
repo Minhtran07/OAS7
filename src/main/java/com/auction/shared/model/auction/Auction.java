@@ -6,18 +6,18 @@ import com.auction.shared.model.user.Bidder;
 
 import java.time.LocalDateTime;
 
-public class Auction extends Entity {
+public class Auction {  //Quá trình đấu giá
     private Item item;
-    private Bidder currentWinner;
-    private double currentPrice;
+    private Bidder currentWinner;  // Người đặt giá max
+    private double currentPrice;    //Giá hiện tại( Giá max )
     private LocalDateTime endTime;
-    private String status; // "OPEN", "CLOSED"
+    private Role status; // "OPEN", "CLOSED"
 
     public Auction(Item item, LocalDateTime endTime) {
         this.item = item;
         this.endTime = endTime;
         this.currentPrice = item.getStartingPrice();
-        this.status = "OPEN";
+        this.status = Role.OPEN;
     }
 
     public boolean updateBid(Bidder bidder, double amount) {

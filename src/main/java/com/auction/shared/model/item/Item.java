@@ -4,9 +4,9 @@ import com.auction.shared.model.Entity;
 
 public abstract class Item extends Entity {
     private String name;
-    private String description;
+    private String description; // Mô tả
     private double startingPrice;
-    private double currentPrice;
+    private double currentPrice;  // Giá hiện tại (sau khi bid)
 
     public Item(String name, String description, double startingPrice, double currentPrice) {
         this.name = name;

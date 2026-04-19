@@ -6,13 +6,13 @@ public class Bidder extends User {
     private double balance;
 
     public Bidder(String username, String password, String fullname, String email, double balance) {
-        super(username, password, fullname, email, "BIDDER");
+        super(username, password, fullname, email, Role.BIDDER);
         this.balance = balance;
     }
 
     public void setBalance(double balance) {
         this.balance = balance;
-    }
+    } // Balance: Số dư
 
     public double getBalance() {
         return balance;

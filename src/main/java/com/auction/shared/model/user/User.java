@@ -7,9 +7,9 @@ public abstract class User extends Entity {
     private String password;
     private String fullname;
     private String email;
-    private String role; // "BIDDER", "SELLER", "ADMIN"
+    private Role role; // "BIDDER", "SELLER", "ADMIN"
 
-    public User(String username, String password, String email, String fullname, String role) {
+    public User(String username, String password, String email, String fullname, Role role) {
         this.username = username;
         this.password = password;
         this.fullname = fullname;
@@ -41,7 +41,7 @@ public abstract class User extends Entity {
         this.email = email;
     }
 
-    public String getRole() {
+    public Role getRole() {
         return role;
     }
 

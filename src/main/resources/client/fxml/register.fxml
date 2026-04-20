@@ -7,7 +7,6 @@
 <?import javafx.scene.layout.AnchorPane?>
 <?import javafx.scene.text.Font?>
 
-
 <AnchorPane prefHeight="552.0" prefWidth="524.0" xmlns="http://javafx.com/javafx/25" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.auction.client.controller.ControllerRegister">
    <children>
       <Label layoutX="183.0" layoutY="75.0" text="User Register">
@@ -27,6 +26,6 @@
       <PasswordField layoutX="112.0" layoutY="335.0" minHeight="25.0" prefWidth="325.0" promptText="Password" />
       <PasswordField layoutX="112.0" layoutY="395.0" minHeight="25.0" prefWidth="325.0" promptText="Confirm Password" />
       <Button layoutX="112.0" layoutY="450.0" minHeight="25.0" mnemonicParsing="false" prefWidth="325.0" text="Register" />
-      <Button layoutX="112.0" layoutY="490.0" minHeight="25.0" mnemonicParsing="false" prefWidth="325.0" text="Close" />
+      <Button layoutX="112.0" layoutY="490.0" minHeight="25.0" mnemonicParsing="false" onAction="#switchToLogin" prefWidth="325.0" text="Close" />
    </children>
 </AnchorPane>

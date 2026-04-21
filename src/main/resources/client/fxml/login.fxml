@@ -20,7 +20,7 @@
       <PasswordField layoutX="112.0" layoutY="215.0" prefHeight="25.0" prefWidth="325.0" promptText="Password" />
       <Button layoutX="112.0" layoutY="280.0" mnemonicParsing="false" prefHeight="25.0" prefWidth="325.0" text="Log in" />
       <Button layoutX="112.0" layoutY="320.0" mnemonicParsing="false" onAction="#switchToRegister" prefHeight="25.0" prefWidth="325.0" text="Register" />
-      <Button layoutX="112.0" layoutY="360.0" minHeight="25.0" mnemonicParsing="false" prefWidth="325.0" text="Close" />
+      <Button layoutX="112.0" layoutY="360.0" minHeight="25.0" mnemonicParsing="false" onAction="#switchToHome" prefWidth="325.0" text="Close" />
       <Label layoutX="154.0" layoutY="82.0" prefHeight="17.0" prefWidth="249.0" />
    </children>
 </AnchorPane>

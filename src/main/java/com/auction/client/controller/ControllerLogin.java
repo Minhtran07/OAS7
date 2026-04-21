@@ -21,4 +21,13 @@ public class ControllerLogin {
         stage.setScene(new Scene(root));
         stage.show();
     }
+
+    public void switchToHome(ActionEvent event) throws IOException{
+        FXMLLoader loader = new FXMLLoader(MainClient.class.getResource("/client/fxml/home.fxml"));
+        Parent root = loader.load();
+
+        Stage stage = (Stage) ((Node)event.getSource()).getScene().getWindow();
+        stage.setScene(new Scene(root));
+        stage.show();
+    }
 }

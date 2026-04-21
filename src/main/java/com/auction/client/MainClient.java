@@ -12,7 +12,7 @@ public class MainClient extends Application {
 
     @Override
     public void start(Stage stage) throws Exception{
-        FXMLLoader fxmlLoader = new FXMLLoader(MainClient.class.getResource("/client/fxml/login.fxml"));
+        FXMLLoader fxmlLoader = new FXMLLoader(MainClient.class.getResource("/client/fxml/home.fxml"));
         Scene scene = new Scene(fxmlLoader.load());
 
         stage.setTitle("Auction Client");

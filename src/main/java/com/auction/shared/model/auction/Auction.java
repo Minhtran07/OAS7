@@ -7,21 +7,23 @@ import com.auction.shared.model.user.Bidder;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
-public class Auction extends Entity {
+public class Auction {  //Quá trình đấu giá
     private Item item;
     private Bidder currentWinner;
     private BigDecimal currentPrice;
     private LocalDateTime startTime;
     private LocalDateTime endTime;
-    private String status;
+    private Role status;
     private int highestBidderId;
 
     public Auction(Item item, LocalDateTime startTime, LocalDateTime endTime) {
         this.item = item;
         this.startTime = startTime;
         this.endTime = endTime;
+
         this.currentPrice = BigDecimal.valueOf(item.getStartingPrice());
-        this.status = "OPEN";
+        this.status = Role.OPEN;
+
     }
 
     public void updateStatusBasedOnTime() {
@@ -29,12 +31,12 @@ public class Auction extends Entity {
 
         // Nếu đang OPEN và đã đến giờ bắt đầu -> Chuyển sang RUNNING
         if (status.equals("OPEN") && (now.isEqual(startTime) || now.isAfter(startTime))) {
-            this.status = "RUNNING";
+            this.status = Role.RUNNING;
         }
 
         // Nếu đang RUNNING và đã đến giờ kết thúc -> Chuyển sang FINISHED
         if (status.equals("RUNNING") && (now.isEqual(endTime) || now.isAfter(endTime))) {
-            this.status = "FINISHED";
+            this.status = Role.FINISHED;
         }
     }
 
@@ -48,11 +50,11 @@ public class Auction extends Entity {
         return false;
     }
 
-    public String getStatus() {
+    public Role getStatus() {
         return status;
     }
 
-    public void setStatus(String status) {
+    public void setStatus(Role status) {
         this.status = status;
     }
 

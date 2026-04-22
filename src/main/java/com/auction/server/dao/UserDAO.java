@@ -18,7 +18,7 @@ public class UserDAO {
 
             pstmt.setString(1, user.getUsername());
             pstmt.setString(2, user.getPassword());
-            pstmt.setString(3, user.getRole());
+            pstmt.setString(3, user.getRole().name());
             pstmt.setString(4, user.getEmail());
             pstmt.setString(5, user.getFullname());
 

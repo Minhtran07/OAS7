@@ -4,7 +4,7 @@ import com.auction.shared.model.Entity;
 
 import java.time.LocalDateTime;
 
-public class BidTransaction extends Entity {
+public class BidTransaction {
     private int auctionId;
     private int bidderId;
     private double amount;

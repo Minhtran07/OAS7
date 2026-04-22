@@ -5,7 +5,7 @@ import java.io.Serializable;
 public abstract class Entity implements Serializable {
     protected int id;
 
-    public Entity() {
+    public Entity(int id) {
     }
 
     public int getId() {

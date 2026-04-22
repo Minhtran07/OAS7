@@ -1,8 +1,8 @@
 package com.auction.shared.model.item;
 
 public class Art extends Item {
-    private String artist;
-    private String material;
+    private String artist;  // Họa sĩ
+    private String material;  // Chất liệu
 
     public Art(int id, String category, String name, int sellerID, String description, double startingPrice, double currentPrice, String artist, String material) {
         super(id, category, name, sellerID, description, startingPrice, currentPrice);

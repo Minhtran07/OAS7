@@ -1,4 +1,7 @@
 package com.auction.shared.model.auction;
 
-public class Role {
+
+public enum Role {
+    OPEN, RUNNING, CLOSED, FINISHED;
 }
+

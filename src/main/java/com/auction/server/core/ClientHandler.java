@@ -109,11 +109,11 @@ public class ClientHandler implements Runnable { // implements Runnable để bi
             if (role.equals("BIDDER")) {
                 // Nếu là Bidder, mặc định tạo tài khoản có 0 đồng (hoặc lấy từ JSON nếu có)
                 BigDecimal initialBalance = new BigDecimal("0");
-                newUser = new Bidder(username, password, fullname, email, initialBalance);
+                newUser = new Bidder(id, username, password, fullname, email, initialBalance);
 
             } else if (role.equals("SELLER")) {
                 String storeName = data.has("storeName") ? data.get("storeName").getAsString() : "Cửa hàng của " + fullname;
-                newUser = new Seller(0, username, password, fullname, email, storeName);
+                newUser = new Seller( username, password, fullname, email, storeName);
 
             } else {
                 return new Response("FAIL", "Lỗi: Role đăng ký không hợp lệ! Chỉ nhận BIDDER hoặc SELLER.", null);

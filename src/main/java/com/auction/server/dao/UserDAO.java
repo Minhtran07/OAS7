@@ -19,8 +19,8 @@ public class UserDAO {
             pstmt.setString(1, user.getUsername());
             pstmt.setString(2, user.getPassword());
             pstmt.setString(3, user.getRole().name());
-            pstmt.setString(4, user.getEmail());
-            pstmt.setString(5, user.getFullname());
+            pstmt.setString(4, user.getFullname());
+            pstmt.setString(5, user.getEmail());
 
             if (user instanceof Bidder) {
                 pstmt.setBigDecimal(6, ((Bidder) user).getBalance());

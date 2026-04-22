@@ -4,20 +4,20 @@ import com.auction.shared.model.Entity;
 
 import java.time.LocalDateTime;
 
-public class BidTransaction{
-    private String auctionId;
-    private String bidderId;
+public class BidTransaction {
+    private int auctionId;
+    private int bidderId;
     private double amount;
     private LocalDateTime timestamp;
 
-    public BidTransaction(String bidderId, String auctionId, double amount) {
+    public BidTransaction(int bidderId, int auctionId, double amount) {
         this.bidderId = bidderId;
         this.auctionId = auctionId;
         this.amount = amount;
         this.timestamp = LocalDateTime.now();
     }
-    public String getBidderId() { return bidderId; }
-    public String getAuctionId() { return auctionId; }
+    public int getBidderId() { return bidderId; }
+    public int getAuctionId() { return auctionId; }
     public double getAmount() { return amount; }
     public LocalDateTime getBidTime() { return timestamp; }
 }

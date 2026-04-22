@@ -4,8 +4,9 @@ public class Art extends Item {
     private String artist;  // Họa sĩ
     private String material;  // Chất liệu
 
-    public Art(String name, String description, double startingPrice, double currentPrice, String artist, String material) {
-        super(name, description, startingPrice, currentPrice);
+    public Art(int id, String category, String name, int sellerID, String description, double startingPrice, double currentPrice, String artist, String material) {
+        super(id, category, name, sellerID, description, startingPrice, currentPrice);
+        this.setCategory("ART");
         this.artist = artist;
         this.material = material;
     }

@@ -23,5 +23,6 @@ public class ControllerRegister {
         stage.show();
 
         stage.setResizable(false);
+
     }
 }

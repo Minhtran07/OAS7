@@ -13,11 +13,12 @@ import java.io.IOException;
 
 public class ControllerHome {
 
-    public void switchToLogin(ActionEvent event) throws IOException {
+    @FXML
+    private void switchToLogin(ActionEvent event) throws IOException {
         FXMLLoader loader = new FXMLLoader(MainClient.class.getResource("/client/fxml/login.fxml"));
         Parent root = loader.load();
 
-        Stage stage = (Stage) ((Node) event.getSource()).getScene().getWindow();
+        Stage stage = (Stage) ((Node)event.getSource()).getScene().getWindow();
         stage.setScene(new Scene(root));
         stage.show();
     }

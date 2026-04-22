@@ -18,5 +18,6 @@ public class MainClient extends Application {
         stage.setTitle("Auction Client");
         stage.setScene(scene);
         stage.show();
+
     }
 }

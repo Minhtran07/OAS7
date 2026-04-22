@@ -4,12 +4,13 @@ import com.auction.shared.model.Entity;
 import com.auction.shared.model.item.Item;
 import com.auction.shared.model.user.Bidder;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 public class Auction extends Entity {
     private Item item;
     private Bidder currentWinner;
-    private double currentPrice;
+    private BigDecimal currentPrice;
     private LocalDateTime startTime;
     private LocalDateTime endTime;
     private String status;
@@ -19,7 +20,7 @@ public class Auction extends Entity {
         this.item = item;
         this.startTime = startTime;
         this.endTime = endTime;
-        this.currentPrice = item.getStartingPrice();
+        this.currentPrice = BigDecimal.valueOf(item.getStartingPrice());
         this.status = "OPEN";
     }
 
@@ -37,8 +38,8 @@ public class Auction extends Entity {
         }
     }
 
-    public boolean updateBid(Bidder bidder, double amount) {
-        if (amount > this.currentPrice) {
+    public boolean updateBid(Bidder bidder, BigDecimal amount) {
+        if (amount.compareTo(this.currentPrice) > 0) {
             this.currentPrice = amount;
             this.currentWinner = bidder;
             this.highestBidderId = bidder.getId();
@@ -55,11 +56,11 @@ public class Auction extends Entity {
         this.status = status;
     }
 
-    public double getCurrentPrice() {
+    public BigDecimal getCurrentPrice() {
         return currentPrice;
     }
 
-    public void setCurrentPrice(double currentPrice) {
+    public void setCurrentPrice(BigDecimal currentPrice) {
         this.currentPrice = currentPrice;
     }
 

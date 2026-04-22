@@ -1,18 +1,19 @@
 package com.auction.shared.model.item;
 
 public class Vehicle extends Item {
-    private int year;
+    private int modelYear;
 
-    public Vehicle(String name, String description, double startingPrice, double currentPrice, int year) {
-        super(name, description, startingPrice, currentPrice);
-        this.year = year;
+    public Vehicle(int id, String category, String name, int sellerID, String description, double startingPrice, double currentPrice, int modelYear) {
+        super(id, category, name, sellerID, description, startingPrice, currentPrice);
+        this.setCategory("VEHICLE");
+        this.modelYear = modelYear;
     }
 
     public int getYear() {
-        return year;
+        return modelYear;
     }
 
     public void setYear(int year) {
-        this.year = year;
+        this.modelYear = year;
     }
 }

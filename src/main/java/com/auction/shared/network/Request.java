@@ -31,6 +31,5 @@ public class Request {
     ClientHandler nhận được, dùng gson.fromJson(..., Request.class) để dịch nó thành một đối tượng Request trong RAM.
     lấy request.getAction() ra đọc
     đưa dữ liệu cho minh ktra database
-
      */
 }

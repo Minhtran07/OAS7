@@ -3,8 +3,8 @@ package com.auction.shared.model.user;
 public class Seller extends User {
     private String storeName;
 
-    public Seller(int i, String username, String password, String fullname, String email, String storeName) {
-        super(username, password, fullname, email, "SELLER");
+    public Seller(int id, String username, String password, String fullname, String email, String storeName) {
+        super(id, username, password, fullname, email, "SELLER");
         this.storeName = storeName;
     }
 

@@ -19,5 +19,7 @@ public class MainClient extends Application {
         stage.setScene(scene);
         stage.show();
 
+        stage.setFullScreen(true);
+
     }
 }

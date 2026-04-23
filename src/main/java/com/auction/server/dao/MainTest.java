@@ -11,13 +11,13 @@ public class MainTest {
 
         // 1. Test Đăng ký
         System.out.println("--- TEST ĐĂNG KÝ ---");
-        Bidder newBidder = new Bidder(0, "ngocminh3", "1234567", "Ngoc Minh", "minh@gmail.com", new BigDecimal("0"));
+        Bidder newBidder = new Bidder(0, "ngocminh7", "1234567", "Ngoc Minh", "minh@gmail.com", new BigDecimal("0"));
         boolean isRegistered = dao.register(newBidder);
         System.out.println("Đăng ký thành công? " + isRegistered);
 
         // 2. Test Đăng nhập
         System.out.println("\n--- TEST ĐĂNG NHẬP ---");
-        User loggedInUser = dao.login("ngocminh", "123456");
+        User loggedInUser = dao.login("ngocminh7", "1234567");
 
         if (loggedInUser != null) {
             System.out.println("Đăng nhập thành công!");

@@ -2,10 +2,12 @@ package com.auction.shared.model.item;
 
 public class Electronics extends Item {
     private String brand;
-    private String warrantyPeriod;
+    private int warrantyPeriod; // Thời gian bảo hành
 
-    public Electronics(String name, String description, double startingPrice, double currentPrice, String brand, String warrantyPeriod) {
-        super(name, description, startingPrice, currentPrice);
+
+    public Electronics(int id, String category, String name, int sellerID, String description, double startingPrice, double currentPrice, String brand, int warrantyPeriod) {
+        super(id, category, name, sellerID, description, startingPrice, currentPrice);
+        this.setCategory("ELECTRONICS");
         this.brand = brand;
         this.warrantyPeriod = warrantyPeriod;
     }
@@ -18,7 +20,7 @@ public class Electronics extends Item {
         this.brand = brand;
     }
 
-    public String getWarrantyPeriod() {
+    public int getWarrantyPeriod() {
         return warrantyPeriod;
     }
 

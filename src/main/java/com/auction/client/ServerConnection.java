@@ -28,12 +28,56 @@ import java.util.concurrent.TimeUnit;
  */
 public class ServerConnection {
 
-    private static final String HOST            = "localhost";
-    private static final int    PORT            = 3667;
+    // HOST/PORT được resolve theo thứ tự ưu tiên:
+    //   1. JVM system property -Dauction.server.host / -Dauction.server.port
+    //   2. Biến môi trường AUCTION_SERVER_HOST / AUCTION_SERVER_PORT
+    //   3. File ~/.auction-client.properties (host=..., port=...)
+    //   4. Mặc định: localhost:3667
+    //
+    // Nhờ vậy khi chạy trên LAN, client ở máy khác chỉ cần đặt env:
+    //   AUCTION_SERVER_HOST=192.168.1.50 ./run-client.sh
+    // mà không cần sửa code.
+    private static final String HOST            = resolveHost();
+    private static final int    PORT            = resolvePort();
     private static final int    CONNECT_TIMEOUT = 5_000;   // 5s timeout kết nối
     private static final int    REPLY_TIMEOUT_S = 10;      // 10s chờ reply
     private static final int    MAX_RETRIES     = 3;
     private static final long   RETRY_DELAY_MS  = 1_000;   // 1s giữa các lần thử
+
+    private static String resolveHost() {
+        String v = System.getProperty("auction.server.host");
+        if (v != null && !v.isBlank()) return v.trim();
+        v = System.getenv("AUCTION_SERVER_HOST");
+        if (v != null && !v.isBlank()) return v.trim();
+        v = readFromPropertiesFile("host");
+        if (v != null && !v.isBlank()) return v.trim();
+        return "localhost";
+    }
+
+    private static int resolvePort() {
+        String v = System.getProperty("auction.server.port");
+        if (v == null || v.isBlank()) v = System.getenv("AUCTION_SERVER_PORT");
+        if (v == null || v.isBlank()) v = readFromPropertiesFile("port");
+        try {
+            if (v != null && !v.isBlank()) return Integer.parseInt(v.trim());
+        } catch (NumberFormatException ignore) {}
+        return 3667;
+    }
+
+    private static String readFromPropertiesFile(String key) {
+        try {
+            java.io.File f = new java.io.File(
+                    System.getProperty("user.home"), ".auction-client.properties");
+            if (!f.exists()) return null;
+            java.util.Properties props = new java.util.Properties();
+            try (java.io.FileInputStream in = new java.io.FileInputStream(f)) {
+                props.load(in);
+            }
+            return props.getProperty(key);
+        } catch (Exception e) {
+            return null;
+        }
+    }
 
     private static volatile ServerConnection instance;
 

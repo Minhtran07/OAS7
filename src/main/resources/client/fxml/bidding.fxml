@@ -65,8 +65,18 @@
                     </HBox>
                 </VBox>
 
+                <!-- Badge "Chế độ theo dõi" — chỉ hiện với Seller -->
+                <HBox fx:id="viewOnlyBadgeBox" alignment="CENTER_LEFT" spacing="8" visible="false" managed="false"
+                      style="-fx-background-color: #fff7ed; -fx-background-radius: 10;
+                             -fx-padding: 12 16; -fx-border-color: #fed7aa; -fx-border-radius: 10;">
+                    <Label text="👁" style="-fx-font-size: 16px;" />
+                    <Label text="Chế độ theo dõi — Seller không thể đặt giá"
+                           style="-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #9a3412;"
+                           wrapText="true"/>
+                </HBox>
+
                 <!-- Đặt giá thủ công -->
-                <VBox spacing="12"
+                <VBox fx:id="placeBidBox" spacing="12"
                       style="-fx-background-color: white; -fx-background-radius: 12;
                              -fx-padding: 20; -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.07), 8, 0, 0, 2);">
                     <Label text="💰 Đặt giá"
@@ -88,7 +98,7 @@
                 </VBox>
 
                 <!-- Auto-Bidding -->
-                <VBox spacing="12"
+                <VBox fx:id="autoBidBox" spacing="12"
                       style="-fx-background-color: white; -fx-background-radius: 12;
                              -fx-padding: 20; -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.07), 8, 0, 0, 2);">
                     <HBox alignment="CENTER_LEFT" spacing="8">

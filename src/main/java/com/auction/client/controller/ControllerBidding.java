@@ -24,8 +24,12 @@ import javafx.scene.chart.XYChart;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.VBox;
 import javafx.event.ActionEvent;
 import javafx.stage.Stage;
+
+import com.auction.shared.model.user.Role;
 
 import java.io.IOException;
 import java.time.LocalDateTime;
@@ -52,6 +56,11 @@ public class ControllerBidding implements ServerConnection.PushListener {
     // Auto-bid fields
     @FXML private TextField maxBidField;
     @FXML private TextField incrementField;
+
+    // Containers để ẩn/hiện theo role
+    @FXML private VBox placeBidBox;
+    @FXML private VBox autoBidBox;
+    @FXML private HBox viewOnlyBadgeBox;
 
     // Chart
     @FXML private LineChart<String, Number> priceChart;
@@ -90,6 +99,38 @@ public class ControllerBidding implements ServerConnection.PushListener {
         MoneyField.attach(bidAmountField);
         MoneyField.attach(maxBidField);
         MoneyField.attach(incrementField);
+
+        applyRoleBasedUI();
+    }
+
+    /**
+     * Seller/Admin không được đấu giá → ẩn form đặt giá + auto-bid,
+     * hiện badge "Chế độ theo dõi" để UX rõ ràng.
+     * Bidder thì không hiện badge, mọi thứ vẫn như cũ.
+     *
+     * Server-side đã chặn tuyệt đối ở handlePlaceBid/handleAutoBid rồi —
+     * phần này chỉ là UX guard, không phải security boundary.
+     */
+    private void applyRoleBasedUI() {
+        if (!UserSession.getInstance().isLoggedIn()) return;
+
+        Role role = UserSession.getInstance().getCurrentUser().getRole();
+        boolean canBid = (role == Role.BIDDER);
+
+        setNodeVisible(placeBidBox,      canBid);
+        setNodeVisible(autoBidBox,       canBid);
+        setNodeVisible(viewOnlyBadgeBox, !canBid);
+    }
+
+    private void setNodeVisible(javafx.scene.Node node, boolean show) {
+        if (node == null) return;
+        node.setVisible(show);
+        node.setManaged(show);
+    }
+
+    private boolean isBidderRole() {
+        return UserSession.getInstance().isLoggedIn()
+                && UserSession.getInstance().getCurrentUser().getRole() == Role.BIDDER;
     }
 
     public void setAuctionData(int auctionId, int itemId,
@@ -371,6 +412,10 @@ public class ControllerBidding implements ServerConnection.PushListener {
 
     @FXML
     private void handlePlaceBid(ActionEvent event) {
+        if (!isBidderRole()) {
+            showBidMessage("Tài khoản Seller không được phép đặt giá.", false);
+            return;
+        }
         double amount = MoneyField.getValue(bidAmountField);
         if (amount < 0) { showBidMessage("Vui lòng nhập số tiền hợp lệ!", false); return; }
 
@@ -406,6 +451,10 @@ public class ControllerBidding implements ServerConnection.PushListener {
 
     @FXML
     private void handleRegisterAutoBid(ActionEvent event) {
+        if (!isBidderRole()) {
+            showBidMessage("Tài khoản Seller không được phép dùng auto-bid.", false);
+            return;
+        }
         double maxBid    = MoneyField.getValue(maxBidField);
         double increment = MoneyField.getValue(incrementField);
 

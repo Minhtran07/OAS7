@@ -19,11 +19,25 @@ import java.util.concurrent.Executors;
 
 public class MainServer {
     private static final Logger logger = LoggerFactory.getLogger(MainServer.class);
-    private static final int PORT = 3667;
+    private static final int PORT = resolvePort();
     private static final ExecutorService pool = Executors.newFixedThreadPool(50);
+
+    /**
+     * Port được lấy theo thứ tự:
+     *   -Dauction.server.port > AUCTION_SERVER_PORT > 3667
+     */
+    private static int resolvePort() {
+        String v = System.getProperty("auction.server.port");
+        if (v == null || v.isBlank()) v = System.getenv("AUCTION_SERVER_PORT");
+        try {
+            if (v != null && !v.isBlank()) return Integer.parseInt(v.trim());
+        } catch (NumberFormatException ignore) {}
+        return 3667;
+    }
 
     public static void main(String[] args) {
         logger.info("Đang khởi động Máy chủ Đấu giá trực tuyến trên cổng {}...", PORT);
+        printLocalIps();
 
         // Load tất cả phiên đang hoạt động từ DB vào AuctionManager
         loadActiveAuctions();
@@ -42,6 +56,35 @@ public class MainServer {
             // vòng lặp vô hạn cho server mạng
         } catch (IOException e) {
             logger.error("Lỗi khi khởi động máy chủ: {}", e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Liệt kê các IPv4 non-loopback của máy chạy server.
+     * Giúp admin biết client ở máy khác trong LAN phải trỏ đến IP nào.
+     */
+    private static void printLocalIps() {
+        try {
+            java.util.Enumeration<java.net.NetworkInterface> nets =
+                    java.net.NetworkInterface.getNetworkInterfaces();
+            logger.info("Các địa chỉ IP máy chủ đang lắng nghe (dùng IP này cho client ở máy khác):");
+            boolean any = false;
+            while (nets.hasMoreElements()) {
+                java.net.NetworkInterface ni = nets.nextElement();
+                if (!ni.isUp() || ni.isLoopback() || ni.isVirtual()) continue;
+                for (java.net.InterfaceAddress ia : ni.getInterfaceAddresses()) {
+                    java.net.InetAddress addr = ia.getAddress();
+                    if (addr instanceof java.net.Inet4Address && !addr.isLoopbackAddress()) {
+                        logger.info("  → {}:{}  ({})", addr.getHostAddress(), PORT, ni.getDisplayName());
+                        any = true;
+                    }
+                }
+            }
+            if (!any) {
+                logger.info("  (không tìm thấy interface mạng non-loopback)");
+            }
+        } catch (Exception e) {
+            logger.warn("Không liệt kê được IP local: {}", e.getMessage());
         }
     }
 

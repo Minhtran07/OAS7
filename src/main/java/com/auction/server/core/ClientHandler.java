@@ -185,10 +185,15 @@ public class ClientHandler implements Runnable { // implements Runnable để bi
             int bidderId  = data.get("bidderId").getAsInt();
             double amount = data.get("amount").getAsDouble();
 
-            // Lấy thông tin Bidder từ DB để truyền vào AuctionManager
+            // Lấy thông tin người dùng từ DB
             User user = userDAO.findById(bidderId);
+            if (user == null) {
+                return new Response("FAIL", "Người dùng không tồn tại", null);
+            }
             if (!(user instanceof Bidder)) {
-                return new Response("FAIL", "Người dùng không hợp lệ hoặc không phải Bidder", null);
+                logger.warn("Seller/Admin {} thử đặt giá phiên #{}", user.getUsername(), auctionId);
+                return new Response("FAIL",
+                        "Chỉ Bidder mới được đặt giá. Tài khoản Seller không thể tham gia đấu giá.", null);
             }
             Bidder bidder = (Bidder) user;
 
@@ -361,8 +366,13 @@ public class ClientHandler implements Runnable { // implements Runnable để bi
             double increment = data.get("increment").getAsDouble();
 
             User user = userDAO.findById(bidderId);
+            if (user == null) {
+                return new Response("FAIL", "Người dùng không tồn tại", null);
+            }
             if (!(user instanceof Bidder)) {
-                return new Response("FAIL", "Người dùng không phải Bidder", null);
+                logger.warn("Seller/Admin {} thử auto-bid phiên #{}", user.getUsername(), auctionId);
+                return new Response("FAIL",
+                        "Chỉ Bidder mới được dùng auto-bid. Tài khoản Seller không thể tham gia đấu giá.", null);
             }
             Bidder bidder = (Bidder) user;
 

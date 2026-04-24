@@ -44,6 +44,41 @@ public class UserDAO {
         }
     }
 
+    public User findById(int id) {
+        String sql = "SELECT * FROM users WHERE id = ?";
+
+        try (Connection conn = DatabaseConnection.getInstance().getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+
+            pstmt.setInt(1, id);
+            ResultSet rs = pstmt.executeQuery();
+
+            if (rs.next()) {
+                String username = rs.getString("username");
+                String password = rs.getString("password");
+                String role     = rs.getString("role");
+                String fullname = rs.getString("fullname");
+                String email    = rs.getString("email");
+
+                switch (role.toUpperCase()) {
+                    case "BIDDER":
+                        BigDecimal balance = rs.getBigDecimal("balance");
+                        return new Bidder(id, username, password, fullname, email, balance);
+                    case "SELLER":
+                        String storeName = rs.getString("store_name");
+                        return new Seller(id, username, password, fullname, email, storeName);
+                    case "ADMIN":
+                        return new Admin(id, username, password, fullname, email);
+                    default:
+                        return null;
+                }
+            }
+        } catch (SQLException e) {
+            System.out.println("Lỗi findById: " + e.getMessage());
+        }
+        return null;
+    }
+
     public User login(String username, String password) {
         String sql = "SELECT * FROM users WHERE username = ? AND password = ?";
 

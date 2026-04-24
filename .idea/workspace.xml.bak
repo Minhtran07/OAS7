@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="99a32cc6-8bc3-4d09-8b44-65cb37f14441" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/pom.xml" beforeDir="false" afterPath="$PROJECT_DIR$/pom.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/auction/client/MainClient.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/auction/client/MainClient.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/auction/client/controller/ControllerLogin.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/auction/client/controller/ControllerLogin.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/auction/client/controller/ControllerRegister.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/auction/client/controller/ControllerRegister.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/auction/server/core/ClientHandler.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/auction/server/core/ClientHandler.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/auction/server/dao/DatabaseConnection.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/auction/server/dao/DatabaseConnection.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/auction/server/dao/ItemDAO.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/auction/server/dao/ItemDAO.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/auction/server/dao/UserDAO.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/auction/server/dao/UserDAO.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/auction/server/model/AuctionManager.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/auction/server/model/AuctionManager.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/auction/shared/model/Entity.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/auction/shared/model/Entity.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/auction/shared/model/auction/Auction.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/auction/shared/model/auction/Auction.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/auction/shared/model/item/Electronics.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/auction/shared/model/item/Electronics.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/auction/shared/model/user/Admin.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/auction/shared/model/user/Admin.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/auction/shared/model/user/User.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/auction/shared/model/user/User.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/client/fxml/login.fxml" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/client/fxml/login.fxml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/client/fxml/register.fxml" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/client/fxml/register.fxml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/server/db/auction.db" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/server/db/auction.db" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/server/db/schema.sql" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/server/db/schema.sql" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;lastFilter&quot;: {
+    &quot;state&quot;: &quot;OPEN&quot;,
+    &quot;assignee&quot;: &quot;Minhtran07&quot;
+  }
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/minhneeowo/OAS7copy.git&quot;,
+    &quot;accountId&quot;: &quot;1daa7767-4c42-4bb0-b3bd-d3ad99074bb2&quot;
+  }
+}</component>
+  <component name="McpProjectServerCommands">
+    <commands />
+    <urls />
+  </component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 0
+}</component>
+  <component name="ProjectId" id="3CldwMQ9KPvA59HISCc2Otb0mSb" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "Application.MainServer.executor": "Run",
+    "RunOnceActivity.MCP Project settings loaded": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1": "true",
+    "git-widget-placeholder": "main",
+    "junie.onboarding.icon.badge.shown": "true",
+    "kotlin-language-version-configured": "true",
+    "last_opened_file_path": "/Users/minhtran07/OAS7copy",
+    "to.speed.mode.migration.done": "true"
+  }
+}]]></component>
+  <component name="RunManager" selected="Application.MainClient">
+    <configuration name="MainClient" type="Application" factoryName="Application" temporary="true" nameIsGenerated="true">
+      <option name="MAIN_CLASS_NAME" value="com.auction.client.MainClient" />
+      <module name="OAS" />
+      <extension name="coverage">
+        <pattern>
+          <option name="PATTERN" value="com.auction.client.*" />
+          <option name="ENABLED" value="true" />
+        </pattern>
+      </extension>
+      <method v="2">
+        <option name="Make" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="MainServer" type="Application" factoryName="Application" temporary="true" nameIsGenerated="true">
+      <option name="MAIN_CLASS_NAME" value="com.auction.server.MainServer" />
+      <module name="OAS" />
+      <extension name="coverage">
+        <pattern>
+          <option name="PATTERN" value="com.auction.server.*" />
+          <option name="ENABLED" value="true" />
+        </pattern>
+      </extension>
+      <method v="2">
+        <option name="Make" enabled="true" />
+      </method>
+    </configuration>
+    <recent_temporary>
+      <list>
+        <item itemvalue="Application.MainClient" />
+        <item itemvalue="Application.MainServer" />
+      </list>
+    </recent_temporary>
+  </component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-jdk-30f59d01ecdd-2fc7cc6b9a17-intellij.indexing.shared.core-IU-253.31033.145" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="99a32cc6-8bc3-4d09-8b44-65cb37f14441" name="Changes" comment="" />
+      <created>1776964329421</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1776964329421</updated>
+    </task>
+    <servers />
+  </component>
+</project>

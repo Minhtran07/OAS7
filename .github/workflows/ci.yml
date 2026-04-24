@@ -1,0 +1,50 @@
+name: CI — Build & Test
+
+on:
+  push:
+    branches: [ "main", "master", "develop" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  build-and-test:
+    name: Build & Run Tests (Java 17)
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout code
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Setup Java 17
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+
+      # 3. Build & test (bỏ qua JavaFX UI test vì không có display)
+      - name: Build and run tests
+        run: mvn -B test --no-transfer-progress
+        env:
+          # Headless mode cho JavaFX nếu cần
+          JAVA_TOOL_OPTIONS: "-Djava.awt.headless=true"
+
+      # 4. Publish test report
+      - name: Publish Test Report
+        uses: mikepenz/action-junit-report@v4
+        if: always()   # chạy dù test pass hay fail
+        with:
+          report_paths: '**/target/surefire-reports/TEST-*.xml'
+          detailed_summary: true
+          include_passed: true
+
+      # 5. Upload surefire reports làm artifact
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: target/surefire-reports/
+          retention-days: 7

@@ -30,12 +30,12 @@ public class Auction {  //Quá trình đấu giá
         LocalDateTime now = LocalDateTime.now();
 
         // Nếu đang OPEN và đã đến giờ bắt đầu -> Chuyển sang RUNNING
-        if (status.equals("OPEN") && (now.isEqual(startTime) || now.isAfter(startTime))) {
+        if (status == Role.OPEN && (now.isEqual(startTime) || now.isAfter(startTime))) {
             this.status = Role.RUNNING;
         }
 
         // Nếu đang RUNNING và đã đến giờ kết thúc -> Chuyển sang FINISHED
-        if (status.equals("RUNNING") && (now.isEqual(endTime) || now.isAfter(endTime))) {
+        if (status == Role.RUNNING && (now.isEqual(endTime) || now.isAfter(endTime))) {
             this.status = Role.FINISHED;
         }
     }
@@ -48,6 +48,18 @@ public class Auction {  //Quá trình đấu giá
             return true;
         }
         return false;
+    }
+
+    public LocalDateTime getEndTime() {
+        return endTime;
+    }
+
+    public void setEndTime(LocalDateTime endTime) {
+        this.endTime = endTime;
+    }
+
+    public LocalDateTime getStartTime() {
+        return startTime;
     }
 
     public Role getStatus() {

@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.ScrollPane?>
+<?import javafx.scene.layout.BorderPane?>
+<?import javafx.scene.layout.FlowPane?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.StackPane?>
+<?import javafx.scene.layout.VBox?>
+<?import javafx.scene.layout.Region?>
+
+<BorderPane prefHeight="720.0" prefWidth="1200.0"
+            style="-fx-background-color: #f0f2f5;"
+            xmlns="http://javafx.com/javafx/21"
+            xmlns:fx="http://javafx.com/fxml/1"
+            fx:controller="com.auction.client.controller.ControllerAuctionList">
+
+    <!-- ─── NAVBAR ─── -->
+    <top>
+        <HBox alignment="CENTER_LEFT" spacing="0"
+              style="-fx-background-color: #1a1a2e; -fx-padding: 0 28px; -fx-min-height: 60;">
+            <Label text="🔨 BidNow"
+                   style="-fx-text-fill: white; -fx-font-size: 20px; -fx-font-weight: bold;" />
+            <Region HBox.hgrow="ALWAYS" />
+            <Label fx:id="welcomeLabel"
+                   style="-fx-text-fill: #adb5bd; -fx-font-size: 13px;" />
+            <Button fx:id="sellerDashboardButton" text="🏪  Bán hàng" onAction="#handleSellerDashboard"
+                    style="-fx-background-color: #8e44ad; -fx-text-fill: white;
+                           -fx-font-size: 12px; -fx-font-weight: bold; -fx-cursor: hand;
+                           -fx-background-radius: 6; -fx-padding: 8 16;">
+                <HBox.margin><Insets left="20"/></HBox.margin>
+            </Button>
+            <Button text="Đăng xuất" onAction="#handleLogout"
+                    style="-fx-background-color: #e94560; -fx-text-fill: white;
+                           -fx-font-size: 12px; -fx-font-weight: bold; -fx-cursor: hand;
+                           -fx-background-radius: 6; -fx-padding: 8 16;">
+                <HBox.margin><Insets left="10"/></HBox.margin>
+            </Button>
+        </HBox>
+    </top>
+
+    <!-- ─── CONTENT ─── -->
+    <center>
+        <VBox spacing="0" style="-fx-background-color: #f0f2f5;">
+
+            <!-- Hero header -->
+            <VBox spacing="8"
+                  style="-fx-background-color: linear-gradient(to right, #1a1a2e, #16213e, #0f3460);
+                         -fx-padding: 28 40;">
+                <HBox alignment="CENTER_LEFT" spacing="16">
+                    <VBox spacing="4" HBox.hgrow="ALWAYS">
+                        <Label text="Phiên đấu giá đang diễn ra"
+                               style="-fx-font-size: 24px; -fx-font-weight: bold; -fx-text-fill: white;" />
+                        <Label fx:id="statusLabel" text="Đang tải danh sách..."
+                               style="-fx-font-size: 13px; -fx-text-fill: #adb5bd;" />
+                    </VBox>
+                    <Button text="🔄  Làm mới" onAction="#handleRefresh"
+                            style="-fx-background-color: #e94560; -fx-text-fill: white;
+                                   -fx-font-size: 13px; -fx-font-weight: bold; -fx-cursor: hand;
+                                   -fx-background-radius: 8; -fx-padding: 10 22;" />
+                </HBox>
+            </VBox>
+
+            <!-- Card grid wrapper -->
+            <StackPane VBox.vgrow="ALWAYS" style="-fx-background-color: #f0f2f5;">
+                <!-- Empty state -->
+                <VBox fx:id="emptyState" alignment="CENTER" spacing="14" visible="false" managed="false">
+                    <Label text="🔨" style="-fx-font-size: 56px;" />
+                    <Label text="Chưa có phiên đấu giá nào đang diễn ra"
+                           style="-fx-font-size: 17px; -fx-font-weight: bold; -fx-text-fill: #495057;" />
+                    <Label text="Quay lại sau hoặc nhấn 'Làm mới' để kiểm tra"
+                           style="-fx-font-size: 13px; -fx-text-fill: #adb5bd;" />
+                </VBox>
+
+                <!-- Scrollable card area -->
+                <ScrollPane fx:id="scrollPane" fitToWidth="true"
+                            style="-fx-background-color: transparent;
+                                   -fx-background: transparent;
+                                   -fx-padding: 0;">
+                    <FlowPane fx:id="cardContainer"
+                              hgap="20" vgap="20"
+                              style="-fx-background-color: #f0f2f5; -fx-padding: 28 40 40 40;" />
+                </ScrollPane>
+            </StackPane>
+        </VBox>
+    </center>
+</BorderPane>

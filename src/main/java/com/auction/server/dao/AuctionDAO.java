@@ -227,8 +227,14 @@ public class AuctionDAO {
      * Dùng cho GET_AUCTION_STATE — snapshot ban đầu khi client mở màn hình.
      */
     public AuctionRow getAuctionById(int auctionId) {
-        String sql = "SELECT a.*, u.fullname AS winner_name "
-                   + "FROM auctions a LEFT JOIN users u ON a.winner_id = u.id "
+        // JOIN thêm items để lấy starting_price thật của phiên — cần cho client
+        // mới vào phiên để vẽ điểm "Bắt đầu" đúng giá khởi điểm, không phải giá
+        // bid đầu tiên (vốn xấp xỉ và sai khi giá khởi điểm < giá bid đầu).
+        String sql = "SELECT a.*, u.fullname AS winner_name, "
+                   + "       i.starting_price AS starting_price "
+                   + "FROM auctions a "
+                   + "LEFT JOIN users u ON a.winner_id = u.id "
+                   + "LEFT JOIN items i ON a.item_id   = i.id "
                    + "WHERE a.id = ?";
 
         try (Connection conn = DatabaseConnection.getInstance().getConnection();
@@ -241,6 +247,9 @@ public class AuctionDAO {
                 try {
                     row.winnerName = rs.getString("winner_name");
                 } catch (SQLException ignore) { /* cột có thể null */ }
+                try {
+                    row.startingPrice = rs.getDouble("starting_price");
+                } catch (SQLException ignore) { /* item có thể đã bị xoá */ }
                 return row;
             }
 
@@ -278,6 +287,7 @@ public class AuctionDAO {
         public String startTime;       // String thay vì LocalDateTime — Gson serialize đúng
         public String endTime;
         public double currentPrice;
+        public double startingPrice;   // Giá khởi điểm gốc (JOIN từ items.starting_price)
         public int    winnerId;
         public String winnerName;      // fullname của winner hiện tại (JOIN với users)
     }

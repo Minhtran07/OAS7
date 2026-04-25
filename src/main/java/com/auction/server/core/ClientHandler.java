@@ -348,10 +348,14 @@ public class ClientHandler implements Runnable { // implements Runnable để bi
             java.util.List<AuctionDAO.BidRow> history = auctionDAO.getBidHistory(auctionId);
 
             JsonObject result = new JsonObject();
-            result.addProperty("auctionId",    auction.id);
-            result.addProperty("currentPrice", auction.currentPrice);
-            result.addProperty("endTime",      auction.endTime);
-            result.addProperty("winnerId",     auction.winnerId);
+            result.addProperty("auctionId",     auction.id);
+            result.addProperty("currentPrice",  auction.currentPrice);
+            // Gửi kèm startingPrice để client vẽ điểm "Bắt đầu" đúng — đảm bảo
+            // chart đồng bộ giữa client cũ (có initChart từ đầu) và client mới
+            // (vào phiên giữa chừng, rebuild chart từ history).
+            result.addProperty("startingPrice", auction.startingPrice);
+            result.addProperty("endTime",       auction.endTime);
+            result.addProperty("winnerId",      auction.winnerId);
             if (auction.winnerName != null) {
                 result.addProperty("winnerName", auction.winnerName);
             }

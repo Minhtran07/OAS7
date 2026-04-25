@@ -82,6 +82,7 @@ public class ControllerBidding implements ServerConnection.PushListener {
     private int           auctionId;
     private int           itemId;
     private double        currentPrice;
+    private double        startingPrice;  // giá khởi điểm thật, lấy từ server
     private LocalDateTime endTime;
 
     /**
@@ -102,6 +103,13 @@ public class ControllerBidding implements ServerConnection.PushListener {
     private static final int MAX_CHART_POINTS = 30;
     private static final DateTimeFormatter TIME_FMT =
             DateTimeFormatter.ofPattern("HH:mm:ss");
+    /**
+     * Flag: history (snapshot từ GET_AUCTION_STATE) đã được apply chưa.
+     * Trước khi flag = true, push BID_UPDATE đến sẽ bị bỏ qua cho chart
+     * — vì rebuild trong applyAuctionState() sẽ replay toàn bộ history
+     * từ DB (bao gồm bid mới đó). Tránh duplicate điểm trên chart.
+     */
+    private volatile boolean historyLoaded = false;
 
     // ─── Init ────────────────────────────────────────────────────────────────
 
@@ -146,15 +154,20 @@ public class ControllerBidding implements ServerConnection.PushListener {
 
     public void setAuctionData(int auctionId, int itemId,
                                double currentPrice, String endTimeStr) {
-        this.auctionId    = auctionId;
-        this.itemId       = itemId;
-        this.currentPrice = currentPrice;
-        this.endTime      = LocalDateTime.parse(endTimeStr);
+        this.auctionId     = auctionId;
+        this.itemId        = itemId;
+        this.currentPrice  = currentPrice;
+        this.endTime       = LocalDateTime.parse(endTimeStr);
+        this.historyLoaded = false;  // sẽ chuyển true sau applyAuctionState()
 
         auctionTitleLabel.setText("Phiên đấu giá #" + auctionId + " — Item #" + itemId);
         updatePriceDisplay(currentPrice, "Chưa có");
 
-        initChart(currentPrice);
+        // Khởi tạo Series rỗng — KHÔNG vẽ điểm "Bắt đầu" với currentPrice ở đây.
+        // applyAuctionState() (chạy sau từ loadAuctionState) sẽ rebuild chart
+        // với startingPrice thật từ server + toàn bộ history.
+        // Vẽ ngay sẽ làm "Bắt đầu" sai (= giá hiện tại thay vì giá khởi điểm).
+        initEmptyChart();
 
         // Đăng ký push listener TRƯỚC khi subscribe để không bỏ lỡ event
         ServerConnection.getInstance().setPushListener(this);
@@ -177,6 +190,18 @@ public class ControllerBidding implements ServerConnection.PushListener {
         // Điểm giá khởi điểm làm gốc
         priceSeries.getData().add(new XYChart.Data<>("Bắt đầu", startingPrice));
 
+        yAxis.setAutoRanging(true);
+        updateChartStats();
+    }
+
+    /**
+     * Khởi tạo chart rỗng — sẽ được applyAuctionState() rebuild khi snapshot
+     * từ server về. Tránh vẽ "Bắt đầu" sai bằng currentPrice tạm thời.
+     */
+    private void initEmptyChart() {
+        priceSeries = new XYChart.Series<>();
+        priceSeries.setName("Giá");
+        priceChart.getData().add(priceSeries);
         yAxis.setAutoRanging(true);
         updateChartStats();
     }
@@ -221,9 +246,17 @@ public class ControllerBidding implements ServerConnection.PushListener {
     @FXML
     private void handleClearChart() {
         if (priceSeries != null) {
-            double last = currentPrice;
+            // Reset về giá khởi điểm thật nếu có (đồng bộ với client khác),
+            // fallback sang currentPrice nếu chưa load được startingPrice.
+            double base = (startingPrice > 0) ? startingPrice : currentPrice;
             priceSeries.getData().clear();
-            priceSeries.getData().add(new XYChart.Data<>("Bắt đầu lại", last));
+            priceSeries.getData().add(new XYChart.Data<>("Bắt đầu", base));
+            // Nếu giá hiện tại > giá khởi điểm, vẽ thêm 1 điểm "hiện tại"
+            // để chart hiển thị có ý nghĩa thay vì chỉ 1 chấm cô lập.
+            if (currentPrice > base) {
+                priceSeries.getData().add(new XYChart.Data<>(
+                        LocalDateTime.now().format(TIME_FMT), currentPrice));
+            }
             updateChartStats();
         }
     }
@@ -243,7 +276,12 @@ public class ControllerBidding implements ServerConnection.PushListener {
                     currentPrice = event.newPrice;
                     updatePriceDisplay(event.newPrice, event.winnerName);
                     appendHistory(event.winnerName, event.newPrice);
-                    addChartPoint(event.newPrice);
+                    // Chỉ thêm điểm chart sau khi history snapshot đã apply.
+                    // Nếu chưa, applyAuctionState() sẽ replay full history (bao
+                    // gồm bid này) → không bỏ sót dữ liệu, mà tránh duplicate.
+                    if (historyLoaded) {
+                        addChartPoint(event.newPrice);
+                    }
                     showBidMessage("💡 Có giá mới: " + formatPrice(event.newPrice), false);
                     break;
 
@@ -256,7 +294,9 @@ public class ControllerBidding implements ServerConnection.PushListener {
                 case "AUCTION_FINISHED":
                     currentPrice = event.newPrice;
                     updatePriceDisplay(event.newPrice, event.winnerName + " 🏆");
-                    addChartPoint(event.newPrice);
+                    if (historyLoaded) {
+                        addChartPoint(event.newPrice);
+                    }
                     bidButton.setDisable(true);
                     showBidMessage("🎉 Phiên kết thúc! Người thắng: " + event.winnerName, true);
                     // Đổi màu stats label thành đỏ
@@ -299,6 +339,12 @@ public class ControllerBidding implements ServerConnection.PushListener {
 
                 double price = state.has("currentPrice")
                         ? state.get("currentPrice").getAsDouble() : currentPrice;
+                // startingPrice = giá khởi điểm gốc của phiên (từ items.starting_price).
+                // Nếu server không gửi (DB cũ), fallback về currentPrice — chart sẽ
+                // chỉ thiếu điểm "Bắt đầu" thay vì sai giá.
+                double startingPrice = (state.has("startingPrice")
+                        && !state.get("startingPrice").isJsonNull())
+                        ? state.get("startingPrice").getAsDouble() : price;
                 String winnerName = (state.has("winnerName") && !state.get("winnerName").isJsonNull())
                         ? state.get("winnerName").getAsString() : null;
                 String newEndTime = (state.has("endTime") && !state.get("endTime").isJsonNull())
@@ -316,7 +362,9 @@ public class ControllerBidding implements ServerConnection.PushListener {
                         ? state.getAsJsonArray("history")
                         : new JsonArray();
 
-                Platform.runLater(() -> applyAuctionState(price, winnerName, newEndTime, history));
+                final double startingPriceFinal = startingPrice;
+                Platform.runLater(() ->
+                        applyAuctionState(price, startingPriceFinal, winnerName, newEndTime, history));
 
             } catch (Exception e) {
                 System.err.println("Lỗi parse GET_AUCTION_STATE: " + e.getMessage());
@@ -328,9 +376,11 @@ public class ControllerBidding implements ServerConnection.PushListener {
      * Áp snapshot lên UI (phải gọi trên JavaFX thread).
      * Rebuild chart từ history để đảm bảo chart đồng bộ với các client đã ở trong phiên.
      */
-    private void applyAuctionState(double price, String winnerName,
-                                   String newEndTime, JsonArray history) {
-        this.currentPrice = price;
+    private void applyAuctionState(double price, double startingPrice,
+                                   String winnerName, String newEndTime,
+                                   JsonArray history) {
+        this.currentPrice  = price;
+        this.startingPrice = startingPrice;
 
         // End time có thể đã bị anti-sniping gia hạn
         if (newEndTime != null) {
@@ -338,18 +388,19 @@ public class ControllerBidding implements ServerConnection.PushListener {
             catch (Exception ignore) { /* giữ endTime cũ nếu parse lỗi */ }
         }
 
-        // Rebuild chart: điểm khởi đầu + từng bid lịch sử + điểm hiện tại
+        // Rebuild chart: điểm khởi đầu + từng bid lịch sử + điểm hiện tại.
+        // Server gửi startingPrice thật từ items.starting_price → chart đồng bộ
+        // với client cũ (initChart từ đầu). Nếu DB cũ không có, fallback dùng
+        // bid đầu tiên hoặc currentPrice.
         priceSeries.getData().clear();
 
-        double startingPrice = price;
-        if (history.size() > 0) {
-            // Giá "Bắt đầu" = giá trước bid đầu tiên. Nhưng ta không biết giá khởi
-            // điểm chính xác ở đây (client không lưu), nên dùng giá bid đầu tiên
-            // làm xấp xỉ — điểm "Bắt đầu" đặt thấp hơn 1 chút cho hợp lý về UI
-            // nếu cần; đơn giản nhất là dùng giá bid đầu.
-            startingPrice = history.get(0).getAsJsonObject().get("amount").getAsDouble();
+        double startPoint = startingPrice;
+        if (startPoint <= 0) {
+            startPoint = (history.size() > 0)
+                    ? history.get(0).getAsJsonObject().get("amount").getAsDouble()
+                    : price;
         }
-        priceSeries.getData().add(new XYChart.Data<>("Bắt đầu", startingPrice));
+        priceSeries.getData().add(new XYChart.Data<>("Bắt đầu", startPoint));
 
         // Clear history log và rebuild
         historyLog.setLength(0);
@@ -379,6 +430,9 @@ public class ControllerBidding implements ServerConnection.PushListener {
                 ? winnerName : "Chưa có");
 
         updateChartStats();
+
+        // Đánh dấu history đã load — từ giờ push BID_UPDATE sẽ đẩy điểm vào chart.
+        historyLoaded = true;
     }
 
     /**
@@ -435,8 +489,30 @@ public class ControllerBidding implements ServerConnection.PushListener {
             showBidMessage("Tài khoản Seller không được phép đặt giá.", false);
             return;
         }
+        // Lấy text gốc trước để phát hiện dấu âm hoặc input trống.
+        // (MoneyField.attach() đã chặn dấu '-' tại bước nhập, nhưng vẫn check phòng
+        //  trường hợp formatter chưa được gắn hoặc text bị paste vào.)
+        String rawText = bidAmountField.getText() == null ? "" : bidAmountField.getText().trim();
+
+        if (rawText.isEmpty()) {
+            showBidMessage("Vui lòng nhập số tiền!", false);
+            return;
+        }
+        if (rawText.startsWith("-") || rawText.contains("-")) {
+            showBidMessage("❌ Không thể nhập số tiền âm!", false);
+            return;
+        }
+
         double amount = MoneyField.getValue(bidAmountField);
-        if (amount < 0) { showBidMessage("Vui lòng nhập số tiền hợp lệ!", false); return; }
+        if (amount < 0) {
+            // getValue() trả về -1 khi không parse được — coi là input không hợp lệ
+            showBidMessage("Vui lòng nhập số tiền hợp lệ!", false);
+            return;
+        }
+        if (amount == 0) {
+            showBidMessage("Số tiền phải lớn hơn 0!", false);
+            return;
+        }
 
         if (amount <= currentPrice) {
             showBidMessage("Giá phải cao hơn: " + formatPrice(currentPrice), false);

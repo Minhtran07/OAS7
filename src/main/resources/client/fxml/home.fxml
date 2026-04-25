@@ -28,7 +28,7 @@
             <Label text="BidNow"
                    style="-fx-text-fill: white; -fx-font-size: 20px; -fx-font-weight: bold; -fx-font-family: 'Arial';" />
             <Region HBox.hgrow="ALWAYS" />
-            <Button mnemonicParsing="false" text="Cách mua"
+            <Button mnemonicParsing="false" onAction="#showHowToBuy" text="Cách mua"
                     style="-fx-background-color: transparent; -fx-text-fill: #adb5bd;
                            -fx-font-size: 13px; -fx-cursor: hand; -fx-border-color: transparent;" />
             <Button mnemonicParsing="false" onAction="#switchToLogin" text="Đăng nhập"
@@ -60,7 +60,7 @@
                             style="-fx-background-color: #e94560; -fx-text-fill: white;
                                    -fx-font-size: 15px; -fx-font-weight: bold; -fx-cursor: hand;
                                    -fx-background-radius: 8; -fx-padding: 12 32;" />
-                    <Button mnemonicParsing="false" text="📖  Hướng dẫn"
+                    <Button mnemonicParsing="false" onAction="#showGuide" text="📖  Hướng dẫn"
                             style="-fx-background-color: transparent; -fx-text-fill: white;
                                    -fx-font-size: 15px; -fx-cursor: hand;
                                    -fx-background-radius: 8; -fx-padding: 12 32;
@@ -68,30 +68,30 @@
                 </HBox>
             </VBox>
 
-            <!-- Stats bar -->
+            <!-- Feature highlights bar (thay cho stats bịa đặt) -->
             <HBox alignment="CENTER" spacing="0"
                   style="-fx-background-color: white; -fx-border-color: #e9ecef; -fx-border-width: 0 0 1 0;">
                 <VBox alignment="CENTER" spacing="4" HBox.hgrow="ALWAYS">
                     <padding><Insets top="20" bottom="20"/></padding>
-                    <Label text="1,200+"
-                           style="-fx-font-size: 24px; -fx-font-weight: bold; -fx-text-fill: #1a1a2e;" />
-                    <Label text="Phiên đấu giá"
+                    <Label text="⚡"
+                           style="-fx-font-size: 24px;" />
+                    <Label text="Thời gian thực"
                            style="-fx-font-size: 12px; -fx-text-fill: #6c757d;" />
                 </VBox>
                 <Region style="-fx-background-color: #e9ecef;" prefWidth="1" prefHeight="60"/>
                 <VBox alignment="CENTER" spacing="4" HBox.hgrow="ALWAYS">
                     <padding><Insets top="20" bottom="20"/></padding>
-                    <Label text="8,500+"
-                           style="-fx-font-size: 24px; -fx-font-weight: bold; -fx-text-fill: #1a1a2e;" />
-                    <Label text="Người dùng"
+                    <Label text="🔒"
+                           style="-fx-font-size: 24px;" />
+                    <Label text="An toàn &amp; minh bạch"
                            style="-fx-font-size: 12px; -fx-text-fill: #6c757d;" />
                 </VBox>
                 <Region style="-fx-background-color: #e9ecef;" prefWidth="1" prefHeight="60"/>
                 <VBox alignment="CENTER" spacing="4" HBox.hgrow="ALWAYS">
                     <padding><Insets top="20" bottom="20"/></padding>
-                    <Label text="99.9%"
-                           style="-fx-font-size: 24px; -fx-font-weight: bold; -fx-text-fill: #1a1a2e;" />
-                    <Label text="Uptime"
+                    <Label text="🤖"
+                           style="-fx-font-size: 24px;" />
+                    <Label text="Tự động đấu giá"
                            style="-fx-font-size: 12px; -fx-text-fill: #6c757d;" />
                 </VBox>
             </HBox>

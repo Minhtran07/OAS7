@@ -2,8 +2,10 @@
 
 <?import javafx.geometry.Insets?>
 <?import javafx.scene.control.Button?>
+<?import javafx.scene.control.ComboBox?>
 <?import javafx.scene.control.Label?>
 <?import javafx.scene.control.ScrollPane?>
+<?import javafx.scene.control.TextField?>
 <?import javafx.scene.layout.BorderPane?>
 <?import javafx.scene.layout.FlowPane?>
 <?import javafx.scene.layout.HBox?>
@@ -56,6 +58,14 @@
                         <Label fx:id="statusLabel" text="Đang tải danh sách..."
                                style="-fx-font-size: 13px; -fx-text-fill: #adb5bd;" />
                     </VBox>
+                    <TextField fx:id="searchField" promptText="🔍  Tìm sản phẩm theo tên..."
+                               prefWidth="280"
+                               style="-fx-background-color: rgba(255,255,255,0.95); -fx-text-fill: #1a1a2e;
+                                      -fx-font-size: 13px; -fx-padding: 10 14; -fx-background-radius: 8;" />
+                    <Button fx:id="cartButton" text="🛒  Giỏ đấu giá" onAction="#handleOpenCart"
+                            style="-fx-background-color: #f59e0b; -fx-text-fill: white;
+                                   -fx-font-size: 13px; -fx-font-weight: bold; -fx-cursor: hand;
+                                   -fx-background-radius: 8; -fx-padding: 10 18;" />
                     <Button text="🔄  Làm mới" onAction="#handleRefresh"
                             style="-fx-background-color: #e94560; -fx-text-fill: white;
                                    -fx-font-size: 13px; -fx-font-weight: bold; -fx-cursor: hand;
@@ -63,7 +73,7 @@
                 </HBox>
             </VBox>
 
-            <!-- Filter tabs -->
+            <!-- Filter tabs + category filter -->
             <HBox alignment="CENTER_LEFT" spacing="8"
                   style="-fx-background-color: white; -fx-border-color: #e9ecef;
                          -fx-border-width: 0 0 1 0; -fx-padding: 12 40;">
@@ -73,6 +83,10 @@
                         onAction="#handleFilterFinished" />
                 <Button fx:id="tabAllButton"      text="📋  Tất cả"
                         onAction="#handleFilterAll" />
+                <Region HBox.hgrow="ALWAYS" />
+                <Label text="Loại:" style="-fx-font-size: 12px; -fx-text-fill: #6c757d;" />
+                <ComboBox fx:id="categoryFilter" prefWidth="160"
+                          style="-fx-font-size: 12px;" />
             </HBox>
 
             <!-- Card grid wrapper -->

@@ -147,7 +147,7 @@
                 </VBox>
             </VBox>
 
-            <!-- ══ RIGHT PANEL: Biểu đồ ══ -->
+            <!-- ══ RIGHT PANEL: Biểu đồ + Mô tả sản phẩm ══ -->
             <VBox spacing="14" HBox.hgrow="ALWAYS">
                 <VBox spacing="12" VBox.vgrow="ALWAYS"
                       style="-fx-background-color: white; -fx-background-radius: 12;
@@ -178,6 +178,31 @@
                                         side="LEFT" forceZeroInRange="false" />
                         </yAxis>
                     </LineChart>
+                </VBox>
+
+                <!-- ══ Mô tả sản phẩm ══ -->
+                <VBox spacing="10"
+                      style="-fx-background-color: white; -fx-background-radius: 12;
+                             -fx-padding: 20; -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.07), 8, 0, 0, 2);">
+                    <HBox alignment="CENTER_LEFT" spacing="8">
+                        <Label text="📦" style="-fx-font-size: 16px;" />
+                        <Label text="Thông tin sản phẩm"
+                               style="-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: #1a1a2e;" />
+                        <Region HBox.hgrow="ALWAYS" />
+                        <Label fx:id="itemCategoryBadge" text=""
+                               style="-fx-background-color: #eef2ff; -fx-text-fill: #4338ca;
+                                      -fx-padding: 3 9; -fx-background-radius: 10;
+                                      -fx-font-size: 10px; -fx-font-weight: bold;" />
+                    </HBox>
+                    <Separator />
+                    <Label fx:id="itemNameLabel" text="—"
+                           style="-fx-font-size: 16px; -fx-font-weight: bold; -fx-text-fill: #1a1a2e;"
+                           wrapText="true" />
+                    <Label fx:id="itemDescriptionLabel" text=""
+                           style="-fx-font-size: 12px; -fx-text-fill: #495057;"
+                           wrapText="true" />
+                    <!-- Khối thuộc tính (artist/material/brand/year/...) -->
+                    <VBox fx:id="itemAttributesBox" spacing="4" />
                 </VBox>
             </VBox>
         </HBox>

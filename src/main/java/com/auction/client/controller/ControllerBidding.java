@@ -68,6 +68,12 @@ public class ControllerBidding implements ServerConnection.PushListener {
     @FXML private NumberAxis                yAxis;
     @FXML private Label                     chartStatsLabel;
 
+    // Khối "Thông tin sản phẩm"
+    @FXML private Label itemNameLabel;
+    @FXML private Label itemDescriptionLabel;
+    @FXML private Label itemCategoryBadge;
+    @FXML private VBox  itemAttributesBox;
+
     // ─── State ───────────────────────────────────────────────────────────────
 
     private final Gson gson = new Gson();
@@ -362,6 +368,10 @@ public class ControllerBidding implements ServerConnection.PushListener {
                         ? state.getAsJsonArray("history")
                         : new JsonArray();
 
+                // Item info — render khối "Thông tin sản phẩm"
+                final JsonObject stateFinal = state;
+                Platform.runLater(() -> renderItemInfo(stateFinal));
+
                 final double startingPriceFinal = startingPrice;
                 Platform.runLater(() ->
                         applyAuctionState(price, startingPriceFinal, winnerName, newEndTime, history));
@@ -433,6 +443,91 @@ public class ControllerBidding implements ServerConnection.PushListener {
 
         // Đánh dấu history đã load — từ giờ push BID_UPDATE sẽ đẩy điểm vào chart.
         historyLoaded = true;
+    }
+
+    /**
+     * Render khối "Thông tin sản phẩm" từ payload GET_AUCTION_STATE.
+     * Server gửi: itemName, itemCategory, itemDescription, itemArtist,
+     * itemMaterial, itemBrand, itemWarranty, itemYear (chỉ field nào có giá trị).
+     */
+    private void renderItemInfo(JsonObject state) {
+        if (itemNameLabel == null) return; // FXML chưa cập nhật / null safety
+
+        String name = (state.has("itemName") && !state.get("itemName").isJsonNull())
+                ? state.get("itemName").getAsString() : null;
+        itemNameLabel.setText(name != null && !name.isBlank() ? name : "Sản phẩm");
+
+        String desc = (state.has("itemDescription") && !state.get("itemDescription").isJsonNull())
+                ? state.get("itemDescription").getAsString() : "";
+        if (desc != null && !desc.isBlank()) {
+            itemDescriptionLabel.setText(desc);
+            itemDescriptionLabel.setVisible(true);
+            itemDescriptionLabel.setManaged(true);
+        } else {
+            itemDescriptionLabel.setText("");
+            itemDescriptionLabel.setVisible(false);
+            itemDescriptionLabel.setManaged(false);
+        }
+
+        // Category badge
+        String cat = (state.has("itemCategory") && !state.get("itemCategory").isJsonNull())
+                ? state.get("itemCategory").getAsString() : null;
+        if (itemCategoryBadge != null) {
+            if (cat != null) {
+                String label = switch (cat.toUpperCase()) {
+                    case "ART"         -> "🎨 NGHỆ THUẬT";
+                    case "ELECTRONICS" -> "💻 ĐIỆN TỬ";
+                    case "VEHICLE"     -> "🚗 XE CỘ";
+                    default            -> cat.toUpperCase();
+                };
+                itemCategoryBadge.setText(label);
+                itemCategoryBadge.setVisible(true);
+                itemCategoryBadge.setManaged(true);
+            } else {
+                itemCategoryBadge.setVisible(false);
+                itemCategoryBadge.setManaged(false);
+            }
+        }
+
+        // Attributes box — clear + thêm từng dòng theo category
+        if (itemAttributesBox != null) {
+            itemAttributesBox.getChildren().clear();
+            if (cat != null) {
+                switch (cat.toUpperCase()) {
+                    case "ART" -> {
+                        addAttrRow("Tác giả",   getStr(state, "itemArtist"));
+                        addAttrRow("Chất liệu", getStr(state, "itemMaterial"));
+                    }
+                    case "ELECTRONICS" -> {
+                        addAttrRow("Thương hiệu",   getStr(state, "itemBrand"));
+                        int war = state.has("itemWarranty") && !state.get("itemWarranty").isJsonNull()
+                                ? state.get("itemWarranty").getAsInt() : 0;
+                        if (war > 0) addAttrRow("Bảo hành", war + " tháng");
+                    }
+                    case "VEHICLE" -> {
+                        int year = state.has("itemYear") && !state.get("itemYear").isJsonNull()
+                                ? state.get("itemYear").getAsInt() : 0;
+                        if (year > 0) addAttrRow("Năm sản xuất", String.valueOf(year));
+                    }
+                }
+            }
+        }
+    }
+
+    private static String getStr(JsonObject obj, String key) {
+        return (obj.has(key) && !obj.get(key).isJsonNull()) ? obj.get(key).getAsString() : null;
+    }
+
+    private void addAttrRow(String key, String value) {
+        if (value == null || value.isBlank()) return;
+        HBox row = new HBox(8);
+        Label k = new Label(key + ":");
+        k.setStyle("-fx-font-size: 12px; -fx-text-fill: #6c757d; -fx-font-weight: bold; -fx-min-width: 100;");
+        Label v = new Label(value);
+        v.setStyle("-fx-font-size: 12px; -fx-text-fill: #1a1a2e;");
+        v.setWrapText(true);
+        row.getChildren().addAll(k, v);
+        itemAttributesBox.getChildren().add(row);
     }
 
     /**

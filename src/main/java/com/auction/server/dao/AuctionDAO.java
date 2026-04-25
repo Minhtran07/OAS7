@@ -261,6 +261,84 @@ public class AuctionDAO {
     }
 
     /**
+     * Trả về danh sách các phiên đấu giá mà bidder đã tham gia (đã bid ít nhất 1 lần).
+     * Mỗi row chứa: thông tin auction + item, kèm 2 field bổ sung:
+     *  - myMaxBid: số tiền cao nhất bidder này đã đặt
+     *  - myBidCount: số lượt bid của bidder này
+     * Dùng cho màn hình "Giỏ đấu giá".
+     */
+    public List<MyBidRow> getMyBidAuctions(int bidderId) {
+        List<MyBidRow> list = new ArrayList<>();
+        // GROUP BY auction để mỗi phiên 1 row, tổng hợp max bid + count cho bidder này
+        String sql = "SELECT a.id AS auction_id, a.item_id, a.status, a.start_time, a.end_time, "
+                   + "       a.current_price, a.winner_id, "
+                   + "       i.name AS item_name, i.category AS item_category, "
+                   + "       i.description AS item_description, "
+                   + "       u.fullname AS winner_name, "
+                   + "       MAX(b.amount) AS my_max_bid, "
+                   + "       COUNT(b.id)   AS my_bid_count, "
+                   + "       MAX(b.bid_time) AS my_last_bid_time "
+                   + "FROM bids b "
+                   + "JOIN auctions a ON b.auction_id = a.id "
+                   + "LEFT JOIN items i ON a.item_id   = i.id "
+                   + "LEFT JOIN users u ON a.winner_id = u.id "
+                   + "WHERE b.bidder_id = ? "
+                   + "GROUP BY a.id "
+                   // Phiên đang chạy lên trước, sau đó kết thúc gần nhất trước
+                   + "ORDER BY CASE a.status "
+                   + "  WHEN 'RUNNING'  THEN 1 "
+                   + "  WHEN 'OPEN'     THEN 2 "
+                   + "  WHEN 'FINISHED' THEN 3 "
+                   + "  WHEN 'CLOSED'   THEN 4 "
+                   + "  ELSE 5 END, "
+                   + "a.end_time DESC";
+        try (Connection conn = DatabaseConnection.getInstance().getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setInt(1, bidderId);
+            ResultSet rs = pstmt.executeQuery();
+            while (rs.next()) {
+                MyBidRow row = new MyBidRow();
+                row.auctionId       = rs.getInt("auction_id");
+                row.itemId          = rs.getInt("item_id");
+                row.status          = rs.getString("status");
+                row.startTime       = rs.getString("start_time");
+                row.endTime         = rs.getString("end_time");
+                row.currentPrice    = rs.getDouble("current_price");
+                row.winnerId        = rs.getInt("winner_id");
+                row.itemName        = rs.getString("item_name");
+                row.itemCategory    = rs.getString("item_category");
+                row.itemDescription = rs.getString("item_description");
+                row.winnerName      = rs.getString("winner_name");
+                row.myMaxBid        = rs.getDouble("my_max_bid");
+                row.myBidCount      = rs.getInt("my_bid_count");
+                row.myLastBidTime   = rs.getString("my_last_bid_time");
+                list.add(row);
+            }
+        } catch (SQLException e) {
+            logger.error("Lỗi getMyBidAuctions cho bidder {}: {}", bidderId, e.getMessage());
+        }
+        return list;
+    }
+
+    /** DTO cho row trong "Giỏ đấu giá". */
+    public static class MyBidRow {
+        public int    auctionId;
+        public int    itemId;
+        public String itemName;
+        public String itemCategory;
+        public String itemDescription;
+        public String status;
+        public String startTime;
+        public String endTime;
+        public double currentPrice;
+        public int    winnerId;
+        public String winnerName;
+        public double myMaxBid;
+        public int    myBidCount;
+        public String myLastBidTime;
+    }
+
+    /**
      * Lấy thông tin 1 phiên kèm fullname của winner hiện tại (nếu có).
      * Dùng cho GET_AUCTION_STATE — snapshot ban đầu khi client mở màn hình.
      */
@@ -268,8 +346,18 @@ public class AuctionDAO {
         // JOIN thêm items để lấy starting_price thật của phiên — cần cho client
         // mới vào phiên để vẽ điểm "Bắt đầu" đúng giá khởi điểm, không phải giá
         // bid đầu tiên (vốn xấp xỉ và sai khi giá khởi điểm < giá bid đầu).
+        // Đồng thời lấy luôn các thuộc tính chi tiết của item (artist/material/
+        // brand/warranty/year) để hiển thị mô tả ở màn hình bidding.
         String sql = "SELECT a.*, u.fullname AS winner_name, "
-                   + "       i.starting_price AS starting_price "
+                   + "       i.name AS item_name, "
+                   + "       i.category AS item_category, "
+                   + "       i.description AS item_description, "
+                   + "       i.starting_price AS starting_price, "
+                   + "       i.artist AS item_artist, "
+                   + "       i.material AS item_material, "
+                   + "       i.brand AS item_brand, "
+                   + "       i.warranty_period AS item_warranty, "
+                   + "       i.year AS item_year "
                    + "FROM auctions a "
                    + "LEFT JOIN users u ON a.winner_id = u.id "
                    + "LEFT JOIN items i ON a.item_id   = i.id "
@@ -282,12 +370,16 @@ public class AuctionDAO {
             ResultSet rs = pstmt.executeQuery();
             if (rs.next()) {
                 AuctionRow row = mapRow(rs);
-                try {
-                    row.winnerName = rs.getString("winner_name");
-                } catch (SQLException ignore) { /* cột có thể null */ }
-                try {
-                    row.startingPrice = rs.getDouble("starting_price");
-                } catch (SQLException ignore) { /* item có thể đã bị xoá */ }
+                try { row.winnerName      = rs.getString("winner_name");      } catch (SQLException ignore) {}
+                try { row.startingPrice   = rs.getDouble("starting_price");   } catch (SQLException ignore) {}
+                try { row.itemName        = rs.getString("item_name");        } catch (SQLException ignore) {}
+                try { row.itemCategory    = rs.getString("item_category");    } catch (SQLException ignore) {}
+                try { row.itemDescription = rs.getString("item_description"); } catch (SQLException ignore) {}
+                try { row.itemArtist      = rs.getString("item_artist");      } catch (SQLException ignore) {}
+                try { row.itemMaterial    = rs.getString("item_material");    } catch (SQLException ignore) {}
+                try { row.itemBrand       = rs.getString("item_brand");       } catch (SQLException ignore) {}
+                try { row.itemWarranty    = rs.getInt("item_warranty");       } catch (SQLException ignore) {}
+                try { row.itemYear        = rs.getInt("item_year");           } catch (SQLException ignore) {}
                 return row;
             }
 
@@ -321,6 +413,12 @@ public class AuctionDAO {
         public String itemName;        // Tên sản phẩm (JOIN với bảng items)
         public String itemCategory;    // ART | ELECTRONICS | VEHICLE — để chọn emoji
         public String itemDescription;
+        // Thuộc tính chi tiết theo loại — chỉ populate trong getAuctionById
+        public String itemArtist;      // ART
+        public String itemMaterial;    // ART
+        public String itemBrand;       // ELECTRONICS
+        public int    itemWarranty;    // ELECTRONICS — tháng
+        public int    itemYear;        // VEHICLE
         public String status;          // String thay vì enum — Gson serialize đúng
         public String startTime;       // String thay vì LocalDateTime — Gson serialize đúng
         public String endTime;

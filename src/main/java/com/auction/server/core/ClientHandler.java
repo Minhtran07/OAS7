@@ -12,6 +12,7 @@ import com.auction.shared.model.user.User;
 import com.auction.shared.network.Request;
 import com.auction.shared.network.Response;
 import com.google.gson.Gson;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -91,6 +92,9 @@ public class ClientHandler implements Runnable { // implements Runnable để bi
                         break;
                     case "GET_MY_ITEMS":
                         response = handleGetMyItems(request.getPayload());
+                        break;
+                    case "GET_MY_BIDS":
+                        response = handleGetMyBids(request.getPayload());
                         break;
                     case "ADD_ITEM":
                         response = handleAddItem(request.getPayload());
@@ -388,6 +392,15 @@ public class ClientHandler implements Runnable { // implements Runnable để bi
             if (auction.winnerName != null) {
                 result.addProperty("winnerName", auction.winnerName);
             }
+            // Item info — để client hiển thị ở khối "Thông tin sản phẩm"
+            if (auction.itemName != null)        result.addProperty("itemName",        auction.itemName);
+            if (auction.itemCategory != null)    result.addProperty("itemCategory",    auction.itemCategory);
+            if (auction.itemDescription != null) result.addProperty("itemDescription", auction.itemDescription);
+            if (auction.itemArtist != null)      result.addProperty("itemArtist",      auction.itemArtist);
+            if (auction.itemMaterial != null)    result.addProperty("itemMaterial",    auction.itemMaterial);
+            if (auction.itemBrand != null)       result.addProperty("itemBrand",       auction.itemBrand);
+            if (auction.itemWarranty > 0)        result.addProperty("itemWarranty",    auction.itemWarranty);
+            if (auction.itemYear > 0)            result.addProperty("itemYear",        auction.itemYear);
             // Fix #25: gửi kèm serverNow để client tính offset đồng hồ với server.
             result.addProperty("serverNow", java.time.LocalDateTime.now().toString());
             result.add("history", gson.toJsonTree(history));
@@ -446,6 +459,37 @@ public class ClientHandler implements Runnable { // implements Runnable để bi
         } catch (Exception e) {
             logger.error("Lỗi GET_MY_ITEMS", e);
             return new Response("ERROR", "Không thể lấy danh sách sản phẩm", null);
+        }
+    }
+
+    /**
+     * GET_MY_BIDS — trả về danh sách phiên đấu giá mà bidder đã tham gia.
+     * Payload: { "bidderId": int }
+     * Response payload: { "bids": [...], "serverNow": "..." }
+     *   Mỗi bid row: { auctionId, itemId, itemName, itemCategory, status, endTime,
+     *                  currentPrice, winnerId, winnerName, myMaxBid, myBidCount,
+     *                  myLastBidTime, leading: bool }
+     */
+    private Response handleGetMyBids(String payload) {
+        try {
+            JsonObject data = gson.fromJson(payload, JsonObject.class);
+            int bidderId = data.get("bidderId").getAsInt();
+            java.util.List<AuctionDAO.MyBidRow> rows = auctionDAO.getMyBidAuctions(bidderId);
+
+            // Mark "leading" — bidder hiện đang dẫn đầu (winnerId == bidderId)
+            JsonArray arr = new JsonArray();
+            for (AuctionDAO.MyBidRow r : rows) {
+                JsonObject o = gson.toJsonTree(r).getAsJsonObject();
+                o.addProperty("leading", r.winnerId == bidderId);
+                arr.add(o);
+            }
+            JsonObject result = new JsonObject();
+            result.add("bids", arr);
+            result.addProperty("serverNow", java.time.LocalDateTime.now().toString());
+            return new Response("SUCCESS", "OK", result.toString());
+        } catch (Exception e) {
+            logger.error("Lỗi GET_MY_BIDS", e);
+            return new Response("ERROR", "Không thể lấy danh sách phiên đã bid", null);
         }
     }
 

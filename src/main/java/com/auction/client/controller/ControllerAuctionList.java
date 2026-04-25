@@ -21,8 +21,10 @@ import javafx.scene.Node;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
+import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
+import javafx.scene.control.TextField;
 import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -45,6 +47,7 @@ public class ControllerAuctionList {
     @FXML private Label     statusLabel;
     @FXML private Label     headerTitleLabel;
     @FXML private Button    sellerDashboardButton;
+    @FXML private Button    cartButton;
     @FXML private FlowPane  cardContainer;
     @FXML private ScrollPane scrollPane;
     @FXML private VBox      emptyState;
@@ -52,13 +55,23 @@ public class ControllerAuctionList {
     @FXML private Button    tabRunningButton;
     @FXML private Button    tabFinishedButton;
     @FXML private Button    tabAllButton;
+    // Search + category filter
+    @FXML private TextField           searchField;
+    @FXML private ComboBox<String>    categoryFilter;
 
     private final Gson gson = new Gson();
+    /** Toàn bộ phiên server trả về (chưa lọc). */
     private final List<AuctionItem> data = new ArrayList<>();
     private Timeline countdownTimer;
 
     /** Filter hiện tại: "RUNNING" (mặc định), "FINISHED", "ALL". */
     private String currentFilter = "RUNNING";
+
+    /** Category filter: "ALL" mặc định. */
+    private String currentCategory = "ALL";
+
+    /** Search query (lowercase) - rỗng = không lọc. */
+    private String currentSearch = "";
 
     /** Offset đồng hồ client-server (fix #25). */
     private volatile java.time.Duration clockOffset = java.time.Duration.ZERO;
@@ -86,7 +99,36 @@ public class ControllerAuctionList {
         countdownTimer.play();
 
         applyTabStyles();
+        setupSearchAndCategory();
         loadAuctions();
+    }
+
+    private void setupSearchAndCategory() {
+        // Category combo
+        if (categoryFilter != null) {
+            categoryFilter.getItems().setAll(
+                    "Tất cả loại", "🎨 Nghệ thuật", "💻 Điện tử", "🚗 Xe cộ");
+            categoryFilter.getSelectionModel().selectFirst();
+            categoryFilter.valueProperty().addListener((obs, old, val) -> {
+                currentCategory = mapCategory(val);
+                renderCards();
+            });
+        }
+        // Search field — debounce nhẹ bằng cách chỉ render khi text thay đổi
+        if (searchField != null) {
+            searchField.textProperty().addListener((obs, old, val) -> {
+                currentSearch = val == null ? "" : val.trim().toLowerCase();
+                renderCards();
+            });
+        }
+    }
+
+    private String mapCategory(String label) {
+        if (label == null) return "ALL";
+        if (label.contains("Nghệ thuật")) return "ART";
+        if (label.contains("Điện tử"))    return "ELECTRONICS";
+        if (label.contains("Xe cộ"))      return "VEHICLE";
+        return "ALL";
     }
 
     // ─── Filter tabs ─────────────────────────────────────────────────────────
@@ -139,6 +181,15 @@ public class ControllerAuctionList {
     @FXML
     private void handleRefresh() {
         loadAuctions();
+    }
+
+    @FXML
+    private void handleOpenCart(ActionEvent event) throws IOException {
+        stopTimer();
+        Stage stage = (Stage) ((Node) event.getSource()).getScene().getWindow();
+        SceneUtil.navigate(stage,
+                MainClient.class.getResource("/client/fxml/my_cart.fxml"),
+                "Giỏ đấu giá — Phiên của tôi");
     }
 
     @FXML
@@ -204,10 +255,7 @@ public class ControllerAuctionList {
 
                     List<AuctionItem> items = parseAuctions(auctionsJson);
                     data.addAll(items);
-                    renderCards();
-                    statusLabel.setText(items.isEmpty()
-                            ? emptyMessageForFilter()
-                            : items.size() + " " + filterLabel());
+                    renderCards(); // renderCards tự cập nhật statusLabel theo filter
                 } else {
                     statusLabel.setText("Lỗi: " + (response.getMessage() != null ? response.getMessage() : "không rõ"));
                     renderCards(); // show empty state
@@ -269,17 +317,49 @@ public class ControllerAuctionList {
     private void renderCards() {
         cardContainer.getChildren().clear();
 
-        boolean empty = data.isEmpty();
+        // Áp dụng search + category filter trên data đã có (không gọi server)
+        List<AuctionItem> filtered = new ArrayList<>();
+        for (AuctionItem item : data) {
+            if (!matchesCategory(item)) continue;
+            if (!matchesSearch(item))   continue;
+            filtered.add(item);
+        }
+
+        boolean empty = filtered.isEmpty();
         emptyState.setVisible(empty);
         emptyState.setManaged(empty);
         scrollPane.setVisible(!empty);
         scrollPane.setManaged(!empty);
 
-        if (empty) return;
-
-        for (AuctionItem item : data) {
-            cardContainer.getChildren().add(buildCard(item));
+        if (!empty) {
+            for (AuctionItem item : filtered) {
+                cardContainer.getChildren().add(buildCard(item));
+            }
         }
+
+        // Cập nhật status text — phản ánh count sau filter
+        if (data.isEmpty()) {
+            statusLabel.setText(emptyMessageForFilter());
+        } else if (filtered.size() == data.size()) {
+            statusLabel.setText(data.size() + " " + filterLabel());
+        } else {
+            statusLabel.setText(filtered.size() + " / " + data.size() + " " + filterLabel()
+                    + (currentSearch.isEmpty() && "ALL".equals(currentCategory)
+                       ? "" : " (đã lọc)"));
+        }
+    }
+
+    private boolean matchesCategory(AuctionItem item) {
+        if ("ALL".equals(currentCategory)) return true;
+        return item.itemCategory != null
+                && currentCategory.equalsIgnoreCase(item.itemCategory);
+    }
+
+    private boolean matchesSearch(AuctionItem item) {
+        if (currentSearch.isEmpty()) return true;
+        String name = item.itemName == null ? "" : item.itemName.toLowerCase();
+        String desc = item.itemDescription == null ? "" : item.itemDescription.toLowerCase();
+        return name.contains(currentSearch) || desc.contains(currentSearch);
     }
 
     /**

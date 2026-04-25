@@ -84,6 +84,17 @@ public class ControllerBidding implements ServerConnection.PushListener {
     private double        currentPrice;
     private LocalDateTime endTime;
 
+    /**
+     * Offset đồng hồ (client vs server): serverNow - clientNow.
+     * Dùng cho countdown để 2 máy có giờ lệch vẫn đếm chung đúng endTime server.
+     * Cập nhật mỗi lần GET_AUCTION_STATE trả về serverNow.
+     */
+    private volatile java.time.Duration clockOffset = java.time.Duration.ZERO;
+
+    private LocalDateTime serverNow() {
+        return LocalDateTime.now().plus(clockOffset);
+    }
+
     private final StringBuilder historyLog = new StringBuilder();
 
     // Chart
@@ -292,6 +303,14 @@ public class ControllerBidding implements ServerConnection.PushListener {
                         ? state.get("winnerName").getAsString() : null;
                 String newEndTime = (state.has("endTime") && !state.get("endTime").isJsonNull())
                         ? state.get("endTime").getAsString() : null;
+
+                // Fix #25: cập nhật offset đồng hồ theo serverNow để countdown đúng
+                if (state.has("serverNow") && !state.get("serverNow").isJsonNull()) {
+                    try {
+                        LocalDateTime srvNow = LocalDateTime.parse(state.get("serverNow").getAsString());
+                        clockOffset = java.time.Duration.between(LocalDateTime.now(), srvNow);
+                    } catch (Exception ignore) {}
+                }
 
                 JsonArray history = state.has("history") && state.get("history").isJsonArray()
                         ? state.getAsJsonArray("history")
@@ -505,7 +524,7 @@ public class ControllerBidding implements ServerConnection.PushListener {
 
     private void startCountdown() {
         countdownTask = scheduler.scheduleAtFixedRate(() -> {
-            long secondsLeft = ChronoUnit.SECONDS.between(LocalDateTime.now(), endTime);
+            long secondsLeft = ChronoUnit.SECONDS.between(serverNow(), endTime);
             Platform.runLater(() -> {
                 if (secondsLeft <= 0) {
                     countdownLabel.setText("ĐÃ KẾT THÚC");

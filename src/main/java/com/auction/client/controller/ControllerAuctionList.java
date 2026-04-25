@@ -52,6 +52,12 @@ public class ControllerAuctionList {
     private final List<AuctionItem> data = new ArrayList<>();
     private Timeline countdownTimer;
 
+    /** Offset đồng hồ client-server (fix #25). */
+    private volatile java.time.Duration clockOffset = java.time.Duration.ZERO;
+    private LocalDateTime serverNow() {
+        return LocalDateTime.now().plus(clockOffset);
+    }
+
     @FXML
     public void initialize() {
         // Welcome
@@ -117,7 +123,27 @@ public class ControllerAuctionList {
 
             Platform.runLater(() -> {
                 if ("SUCCESS".equals(response.getStatus()) && response.getPayload() != null) {
-                    List<AuctionItem> items = parseAuctions(response.getPayload());
+                    // Server giờ trả wrapper: { auctions: [...], serverNow: "..." }
+                    // Fallback parse mảng trực tiếp nếu dùng server cũ.
+                    String payload = response.getPayload();
+                    String auctionsJson = payload;
+                    try {
+                        JsonObject wrapper = gson.fromJson(payload, JsonObject.class);
+                        if (wrapper != null && wrapper.has("auctions")) {
+                            auctionsJson = wrapper.get("auctions").toString();
+                            if (wrapper.has("serverNow") && !wrapper.get("serverNow").isJsonNull()) {
+                                try {
+                                    LocalDateTime srv = LocalDateTime.parse(
+                                            wrapper.get("serverNow").getAsString());
+                                    clockOffset = java.time.Duration.between(LocalDateTime.now(), srv);
+                                } catch (Exception ignore) {}
+                            }
+                        }
+                    } catch (Exception ignore) {
+                        // payload là array thuần → giữ nguyên
+                    }
+
+                    List<AuctionItem> items = parseAuctions(auctionsJson);
                     data.addAll(items);
                     renderCards();
                     statusLabel.setText(items.isEmpty()
@@ -327,7 +353,9 @@ public class ControllerAuctionList {
     private String formatRemaining(String endTimeStr) {
         try {
             LocalDateTime end = LocalDateTime.parse(endTimeStr);
-            LocalDateTime now = LocalDateTime.now();
+            // Dùng serverNow() thay vì LocalDateTime.now() để countdown đồng bộ
+            // giữa các máy client có đồng hồ lệch (fix #25).
+            LocalDateTime now = serverNow();
 
             if (!now.isBefore(end)) return "Đã kết thúc";
 

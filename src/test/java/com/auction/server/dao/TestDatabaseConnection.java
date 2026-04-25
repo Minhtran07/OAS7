@@ -1,5 +1,6 @@
 package com.auction.server.dao;
 
+import java.lang.reflect.Proxy;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -22,7 +23,10 @@ public class TestDatabaseConnection {
             DatabaseConnection testInstance = new DatabaseConnection() {
                 @Override
                 public Connection getConnection() {
-                    return sharedConn;
+                    // Wrap để các try-with-resources trong DAO không đóng shared connection.
+                    // Mọi method khác (createStatement, prepareStatement, ...) delegate
+                    // sang sharedConn, riêng close() là no-op.
+                    return wrapNonClosing(sharedConn);
                 }
 
                 @Override
@@ -39,6 +43,31 @@ public class TestDatabaseConnection {
             throw new RuntimeException(
                     "Không thể inject TestDatabaseConnection: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Bọc connection thật bằng Proxy: mọi method delegate sang real connection,
+     * riêng close() là no-op. Tránh việc try-with-resources trong DAO đóng
+     * shared in-memory connection sau lệnh đầu tiên.
+     */
+    static Connection wrapNonClosing(Connection real) {
+        return (Connection) Proxy.newProxyInstance(
+                Connection.class.getClassLoader(),
+                new Class<?>[]{Connection.class},
+                (proxy, method, args) -> {
+                    String name = method.getName();
+                    if ("close".equals(name)) {
+                        return null; // no-op: không đóng shared connection
+                    }
+                    if ("isClosed".equals(name)) {
+                        return real.isClosed();
+                    }
+                    try {
+                        return method.invoke(real, args);
+                    } catch (java.lang.reflect.InvocationTargetException ite) {
+                        throw ite.getCause();
+                    }
+                });
     }
 
     /**

@@ -78,9 +78,14 @@ public class BidEventBus {
 
         Set<PrintWriter> broken = Collections.newSetFromMap(new ConcurrentHashMap<>());
         for (PrintWriter out : set) {
-            out.println(line);
-            if (out.checkError()) {
-                broken.add(out); // client đã mất kết nối
+            // Bọc synchronized(out) để tránh interleave với response của sendRequest
+            // (cùng 1 PrintWriter có thể bị nhiều thread ghi đồng thời: broadcast +
+            // ClientHandler trả reply).
+            synchronized (out) {
+                out.println(line);
+                if (out.checkError()) {
+                    broken.add(out); // client đã mất kết nối
+                }
             }
         }
         set.removeAll(broken);

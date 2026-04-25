@@ -1,6 +1,8 @@
 package com.auction.server.model;
 
 import com.auction.server.core.BidEventBus;
+import com.auction.server.dao.AuctionDAO;
+import com.auction.server.dao.ItemDAO;
 import com.auction.shared.model.auction.Auction;
 import com.auction.shared.model.auction.Role;
 import com.auction.shared.model.user.Bidder;
@@ -18,9 +20,12 @@ import java.util.concurrent.locks.ReentrantLock;
  *
  * Tính năng:
  * - Thread-safe placeBid() với ReentrantLock
+ * - Bid ATOMIC: update RAM + ghi DB cùng trong 1 lock; nếu DB fail → rollback RAM,
+ *   KHÔNG broadcast (tránh lost-update và inconsistency RAM vs DB).
  * - Auto-Bidding: đặt maxBid + increment, hệ thống tự counter-bid
  * - Anti-sniping: bid trong 30s cuối → gia hạn thêm 60s
  * - Observer: sau mỗi bid thành công broadcast event qua BidEventBus
+ * - Snapshot thread-safe: trả về giá/endTime/winner nhất quán dưới lock.
  */
 public class AuctionManager {
     private static final Logger logger = LoggerFactory.getLogger(AuctionManager.class);
@@ -43,6 +48,16 @@ public class AuctionManager {
             }
         }
         return instance;
+    }
+
+    // ─── DAO injection (server-only; AuctionManager được dùng phía server) ───
+    private AuctionDAO auctionDAO;
+    private ItemDAO    itemDAO;
+
+    /** Phải gọi 1 lần khi server khởi động, trước khi nhận client. */
+    public void setDaos(AuctionDAO auctionDAO, ItemDAO itemDAO) {
+        this.auctionDAO = auctionDAO;
+        this.itemDAO    = itemDAO;
     }
 
     // ─── State ───────────────────────────────────────────────────────────────
@@ -68,8 +83,8 @@ public class AuctionManager {
 
     public void addAuction(int auctionId, Auction auction) {
         activeAuctions.put(auctionId, auction);
-        auctionLocks.put(auctionId, new ReentrantLock());
-        autoBidQueues.put(auctionId, new PriorityQueue<>(AutoBidEntry.COMPARATOR));
+        auctionLocks.putIfAbsent(auctionId, new ReentrantLock());
+        autoBidQueues.putIfAbsent(auctionId, new PriorityQueue<>(AutoBidEntry.COMPARATOR));
         logger.info("Đã thêm auction #{} vào AuctionManager", auctionId);
     }
 
@@ -77,13 +92,55 @@ public class AuctionManager {
         return activeAuctions.get(auctionId);
     }
 
-    // ─── Place Bid ───────────────────────────────────────────────────────────
+    /** Map bất biến các phiên đang sống — dùng cho scheduler. */
+    public Map<Integer, Auction> getActiveAuctionsView() {
+        return Collections.unmodifiableMap(activeAuctions);
+    }
+
+    /**
+     * Snapshot nhất quán (dưới lock) giá/endTime/winnerId của 1 phiên.
+     * Dùng cho GET_AUCTION_STATE, tránh đọc lệch giữa các field.
+     */
+    public Snapshot snapshot(int auctionId) {
+        ReentrantLock lock = auctionLocks.get(auctionId);
+        Auction auction   = activeAuctions.get(auctionId);
+        if (lock == null || auction == null) return null;
+
+        lock.lock();
+        try {
+            Snapshot s = new Snapshot();
+            s.currentPrice = auction.getCurrentPrice();
+            s.endTime      = auction.getEndTime();
+            s.status       = auction.getStatus();
+            s.winnerId     = auction.getHighestBidderId();
+            Bidder w = auction.getCurrentWinner();
+            s.winnerName   = (w != null) ? w.getFullname() : null;
+            return s;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /** Xóa phiên khỏi RAM khi đã FINISHED — scheduler gọi. */
+    public void removeAuction(int auctionId) {
+        activeAuctions.remove(auctionId);
+        autoBidQueues.remove(auctionId);
+        // Không remove lock để tránh NPE nếu có thread khác vừa lấy ra — GC sẽ dọn sau
+        logger.info("Đã xóa auction #{} khỏi AuctionManager (FINISHED)", auctionId);
+    }
+
+    public ReentrantLock getLock(int auctionId) {
+        return auctionLocks.get(auctionId);
+    }
+
+    // ─── Place Bid (ATOMIC: RAM + DB cùng trong lock) ────────────────────────
 
     /**
      * Đặt giá thủ công.
-     * Thread-safe per-auction, tự động trigger auto-bid và anti-sniping.
+     * Thread-safe per-auction; ghi DB trong cùng lock với update RAM.
+     * Nếu ghi DB thất bại → rollback giá RAM, KHÔNG broadcast, trả false.
      *
-     * @return true nếu bid thành công
+     * @return true nếu bid thành công (RAM + DB đều OK).
      */
     public boolean placeBid(int auctionId, Bidder bidder, BigDecimal bidAmount) {
         ReentrantLock lock = auctionLocks.get(auctionId);
@@ -104,10 +161,33 @@ public class AuctionManager {
                 return false;
             }
 
+            // Lưu state cũ để rollback nếu DB fail
+            BigDecimal prevPrice  = auction.getCurrentPrice();
+            Bidder     prevWinner = auction.getCurrentWinner();
+            int        prevWinId  = auction.getHighestBidderId();
+
             boolean accepted = auction.updateBid(bidder, bidAmount);
             if (!accepted) {
                 logger.info("Bid bị từ chối: {} < giá hiện tại {}", bidAmount, auction.getCurrentPrice());
                 return false;
+            }
+
+            // Ghi DB NGAY trong lock. Nếu fail → rollback RAM.
+            if (auctionDAO != null) {
+                boolean dbOk =
+                        auctionDAO.recordBid(auctionId, bidder.getId(), bidAmount.doubleValue())
+                     && auctionDAO.updateCurrentPrice(auctionId, bidAmount.doubleValue(), bidder.getId());
+
+                if (!dbOk) {
+                    // Rollback RAM — tránh trạng thái RAM ≠ DB
+                    auction.setCurrentPrice(prevPrice);
+                    auction.setCurrentWinner(prevWinner);
+                    auction.setHighestBidderId(prevWinId);
+                    logger.error("Rollback bid phiên #{} do DB fail", auctionId);
+                    return false;
+                }
+            } else {
+                logger.warn("AuctionManager chưa được set DAO — bid chỉ tồn tại trong RAM!");
             }
 
             logger.info("Bid thành công phiên #{}: {} đặt {}", auctionId, bidder.getUsername(), bidAmount);
@@ -198,23 +278,42 @@ public class AuctionManager {
         if (best == null) return;
 
         BigDecimal autoBidAmount = auction.getCurrentPrice().add(best.increment);
+
+        // Lưu state cũ để rollback nếu DB fail
+        BigDecimal prevPrice  = auction.getCurrentPrice();
+        Bidder     prevWinner = auction.getCurrentWinner();
+        int        prevWinId  = auction.getHighestBidderId();
+
         boolean ok = auction.updateBid(best.bidder, autoBidAmount);
+        if (!ok) return;
 
-        if (ok) {
-            logger.info("Auto-bid phiên #{}: {} tự động đặt {}", auctionId,
-                    best.bidder.getUsername(), autoBidAmount);
-
-            checkAntiSnipe(auctionId, auction);
-
-            BidEventBus.getInstance().broadcast(auctionId,
-                BidEventBus.BidEvent.bidUpdate(
-                    auctionId,
-                    autoBidAmount.doubleValue(),
-                    best.bidderId,
-                    best.bidder.getFullname() + " (auto)"
-                )
-            );
+        // Ghi DB cho auto-bid (cũng atomic như manual bid)
+        if (auctionDAO != null) {
+            boolean dbOk =
+                    auctionDAO.recordBid(auctionId, best.bidderId, autoBidAmount.doubleValue())
+                 && auctionDAO.updateCurrentPrice(auctionId, autoBidAmount.doubleValue(), best.bidderId);
+            if (!dbOk) {
+                auction.setCurrentPrice(prevPrice);
+                auction.setCurrentWinner(prevWinner);
+                auction.setHighestBidderId(prevWinId);
+                logger.error("Rollback auto-bid phiên #{} do DB fail", auctionId);
+                return;
+            }
         }
+
+        logger.info("Auto-bid phiên #{}: {} tự động đặt {}", auctionId,
+                best.bidder.getUsername(), autoBidAmount);
+
+        checkAntiSnipe(auctionId, auction);
+
+        BidEventBus.getInstance().broadcast(auctionId,
+            BidEventBus.BidEvent.bidUpdate(
+                auctionId,
+                autoBidAmount.doubleValue(),
+                best.bidderId,
+                best.bidder.getFullname() + " (auto)"
+            )
+        );
     }
 
     // ─── Anti-Sniping ─────────────────────────────────────────────────────────
@@ -242,6 +341,16 @@ public class AuctionManager {
                 BidEventBus.BidEvent.auctionExtended(auctionId, newEnd.toString())
             );
         }
+    }
+
+    // ─── Snapshot DTO ─────────────────────────────────────────────────────────
+
+    public static class Snapshot {
+        public BigDecimal currentPrice;
+        public LocalDateTime endTime;
+        public Role status;
+        public int winnerId;
+        public String winnerName;
     }
 
     // ─── AutoBid DTO ──────────────────────────────────────────────────────────

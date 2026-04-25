@@ -62,6 +62,10 @@ public class Auction {  //Quá trình đấu giá
         return startTime;
     }
 
+    public Item getItem() {
+        return item;
+    }
+
     public Role getStatus() {
         return status;
     }

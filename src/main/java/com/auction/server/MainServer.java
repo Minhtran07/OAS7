@@ -1,11 +1,16 @@
 package com.auction.server;
 // phụ trách điều phối các luồng tiếp nhận và phản hồi yêu cầu của client
+import com.auction.server.core.AuctionScheduler;
 import com.auction.server.core.ClientHandler;
 import com.auction.server.dao.AuctionDAO;
 import com.auction.server.dao.ItemDAO;
+import com.auction.server.dao.UserDAO;
 import com.auction.server.model.AuctionManager;
 import com.auction.shared.model.auction.Auction;
+import com.auction.shared.model.auction.Role;
 import com.auction.shared.model.item.Item;
+import com.auction.shared.model.user.Bidder;
+import com.auction.shared.model.user.User;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,8 +44,18 @@ public class MainServer {
         logger.info("Đang khởi động Máy chủ Đấu giá trực tuyến trên cổng {}...", PORT);
         printLocalIps();
 
+        // Inject DAO vào AuctionManager để bid được ghi DB ATOMIC trong lock.
+        AuctionDAO auctionDAO = new AuctionDAO();
+        ItemDAO    itemDAO    = new ItemDAO();
+        AuctionManager.getInstance().setDaos(auctionDAO, itemDAO);
+
         // Load tất cả phiên đang hoạt động từ DB vào AuctionManager
-        loadActiveAuctions();
+        loadActiveAuctions(auctionDAO, itemDAO);
+
+        // Khởi động scheduler: tự đổi OPEN→RUNNING→FINISHED (ngay cả khi không có bid)
+        AuctionScheduler scheduler = new AuctionScheduler(auctionDAO, itemDAO);
+        scheduler.start();
+        Runtime.getRuntime().addShutdownHook(new Thread(scheduler::stop, "scheduler-stopper"));
 
         try (ServerSocket serverSocket = new ServerSocket(PORT)) {
             logger.info("Máy chủ đã sẵn sàng. Đang chờ kết nối từ Client...");
@@ -90,12 +105,11 @@ public class MainServer {
 
     /**
      * Load tất cả phiên OPEN/RUNNING từ DB vào AuctionManager khi server khởi động.
-     * Dùng item giả (null-safe) vì AuctionManager chỉ cần giá và thời gian.
+     * Khôi phục cả currentWinner (nếu có) để auto-bid exclude đúng sau restart.
      */
-    private static void loadActiveAuctions() {
+    private static void loadActiveAuctions(AuctionDAO auctionDAO, ItemDAO itemDAO) {
         try {
-            AuctionDAO auctionDAO = new AuctionDAO();
-            ItemDAO    itemDAO    = new ItemDAO();
+            UserDAO userDAO = new UserDAO();
             List<AuctionDAO.AuctionRow> rows = auctionDAO.getAllAuctions();
 
             int loaded = 0;
@@ -111,6 +125,21 @@ public class MainServer {
 
                 Auction auction = new Auction(item, start, end);
                 auction.setCurrentPrice(java.math.BigDecimal.valueOf(row.currentPrice));
+
+                // Khôi phục status theo DB (OPEN hoặc RUNNING)
+                if ("RUNNING".equals(row.status)) {
+                    auction.setStatus(Role.RUNNING);
+                }
+
+                // Fix #15: Khôi phục currentWinner để auto-bid và event hiển thị đúng
+                if (row.winnerId > 0) {
+                    User u = userDAO.findById(row.winnerId);
+                    if (u instanceof Bidder b) {
+                        auction.setCurrentWinner(b);
+                        auction.setHighestBidderId(b.getId());
+                    }
+                }
+
                 AuctionManager.getInstance().addAuction(row.id, auction);
                 loaded++;
             }

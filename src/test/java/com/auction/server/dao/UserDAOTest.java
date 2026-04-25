@@ -25,6 +25,10 @@ class UserDAOTest {
 
     @BeforeAll
     static void setUpDatabase() throws Exception {
+        // Reset DatabaseConnection singleton trước để class này dùng connection riêng,
+        // không bị ảnh hưởng bởi test class khác chạy trước.
+        resetDatabaseConnectionSingleton();
+
         memConn = DriverManager.getConnection("jdbc:sqlite::memory:");
         try (Statement stmt = memConn.createStatement()) {
             stmt.execute("""
@@ -45,6 +49,16 @@ class UserDAOTest {
         TestDatabaseConnection.setSharedConnection(memConn);
     }
 
+    /** Đặt DatabaseConnection.instance = null để test kế tiếp setup mới. */
+    private static void resetDatabaseConnectionSingleton() {
+        try {
+            java.lang.reflect.Field f =
+                    DatabaseConnection.class.getDeclaredField("instance");
+            f.setAccessible(true);
+            f.set(null, null);
+        } catch (Exception ignored) {}
+    }
+
     @BeforeEach
     void clearTable() throws Exception {
         // Xoá data trước mỗi test để các test độc lập nhau
@@ -59,6 +73,8 @@ class UserDAOTest {
         if (memConn != null && !memConn.isClosed()) {
             memConn.close();
         }
+        // Reset singleton để class test khác (chạy sau) tự setup connection mới.
+        resetDatabaseConnectionSingleton();
     }
 
     // ─── register ─────────────────────────────────────────────────────────────
@@ -159,6 +175,10 @@ class UserDAOTest {
         User result = userDAO.login("grace", "pw");
 
         assertNotNull(result);
-        assertEquals(balance, ((Bidder) result).getBalance());
+        // Dùng compareTo thay vì assertEquals: BigDecimal.equals() so sánh cả scale,
+        // 7500000 (scale 0) vs 7500000.0 (scale 1) tuy bằng giá trị nhưng !equals.
+        // DAO đọc balance từ cột REAL → scale có thể khác input gốc.
+        assertEquals(0, balance.compareTo(((Bidder) result).getBalance()),
+                "Balance phải bằng nhau về giá trị (bỏ qua scale)");
     }
 }

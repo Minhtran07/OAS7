@@ -107,7 +107,11 @@ public class ClientHandler implements Runnable { // implements Runnable để bi
                 }
 
                 String jsonResponse = gson.toJson(response);
-                out.println(jsonResponse);
+                // Synchronized cùng lock với BidEventBus.broadcast — tránh interleave
+                // bytes giữa response và push event trên cùng 1 stream.
+                synchronized (out) {
+                    out.println(jsonResponse);
+                }
             }
             // nhận chuỗi json -> biến thành đối tượng request -> xử lý -> tạo đối tượng response -> biến thành chuỗi json -> gửi đi
         } catch (IOException e) {
@@ -197,15 +201,12 @@ public class ClientHandler implements Runnable { // implements Runnable để bi
             }
             Bidder bidder = (Bidder) user;
 
-            // Gọi AuctionManager — thread-safe, có lock bên trong
+            // Gọi AuctionManager — ATOMIC: update RAM + ghi DB trong cùng 1 lock.
+            // Không cần ghi DB ở đây nữa (tránh race khi lock đã unlock mà DB chưa ghi).
             boolean success = AuctionManager.getInstance()
                     .placeBid(auctionId, bidder, BigDecimal.valueOf(amount));
 
             if (success) {
-                // Ghi bid vào DB (lịch sử) và cập nhật giá hiện tại
-                auctionDAO.recordBid(auctionId, bidderId, amount);
-                auctionDAO.updateCurrentPrice(auctionId, amount, bidderId);
-
                 logger.info("Bid thành công: auctionId={}, bidderId={}, amount={}", auctionId, bidderId, amount);
 
                 JsonObject responseData = new JsonObject();
@@ -227,8 +228,16 @@ public class ClientHandler implements Runnable { // implements Runnable để bi
         try {
             java.util.List<AuctionDAO.AuctionRow> auctions = auctionDAO.getAllAuctions();
             logger.info("GET_AUCTIONS: trả về {} phiên đấu giá", auctions.size());
-            String json = gson.toJson(auctions);
-            return new Response("SUCCESS", "OK", json);
+
+            // Gói list auctions + serverNow vào 1 JsonObject để client đồng bộ đồng hồ.
+            // Giữ backward-compat: nếu client cũ parse bằng JsonArray, sẽ lỗi → nhưng
+            // client đi kèm đã update. Cách an toàn hơn: vẫn trả array, serverNow
+            // đi trong Response.message ở dạng "OK|serverNow=..." — chọn cách thêm
+            // wrapper object rõ ràng hơn.
+            JsonObject wrapper = new JsonObject();
+            wrapper.add("auctions", gson.toJsonTree(auctions));
+            wrapper.addProperty("serverNow", java.time.LocalDateTime.now().toString());
+            return new Response("SUCCESS", "OK", wrapper.toString());
         } catch (Exception e) {
             logger.error("Lỗi GET_AUCTIONS: {}", e.getMessage(), e);
             return new Response("ERROR", "Không thể lấy danh sách phiên đấu giá: " + e.getMessage(), null);
@@ -325,16 +334,15 @@ public class ClientHandler implements Runnable { // implements Runnable để bi
                 return new Response("FAIL", "Phiên đấu giá không tồn tại", null);
             }
 
-            // Nếu AuctionManager đang giữ bản mới hơn (đã bị anti-sniping gia hạn)
-            // thì dùng endTime / currentPrice từ RAM để tránh stale.
-            Auction inMemory = AuctionManager.getInstance().getAuction(auctionId);
-            if (inMemory != null) {
-                if (inMemory.getEndTime() != null) {
-                    auction.endTime = inMemory.getEndTime().toString();
-                }
-                if (inMemory.getCurrentPrice() != null) {
-                    auction.currentPrice = inMemory.getCurrentPrice().doubleValue();
-                }
+            // Lấy snapshot THREAD-SAFE từ AuctionManager (dưới lock) để endTime,
+            // currentPrice, winner đồng bộ nhau. Nếu có trong RAM (phiên đang sống)
+            // thì ưu tiên — đặc biệt khi anti-sniping đã gia hạn endTime.
+            AuctionManager.Snapshot snap = AuctionManager.getInstance().snapshot(auctionId);
+            if (snap != null) {
+                if (snap.endTime != null)      auction.endTime      = snap.endTime.toString();
+                if (snap.currentPrice != null) auction.currentPrice = snap.currentPrice.doubleValue();
+                if (snap.winnerId > 0)         auction.winnerId     = snap.winnerId;
+                if (snap.winnerName != null)   auction.winnerName   = snap.winnerName;
             }
 
             java.util.List<AuctionDAO.BidRow> history = auctionDAO.getBidHistory(auctionId);
@@ -347,6 +355,8 @@ public class ClientHandler implements Runnable { // implements Runnable để bi
             if (auction.winnerName != null) {
                 result.addProperty("winnerName", auction.winnerName);
             }
+            // Fix #25: gửi kèm serverNow để client tính offset đồng hồ với server.
+            result.addProperty("serverNow", java.time.LocalDateTime.now().toString());
             result.add("history", gson.toJsonTree(history));
 
             return new Response("SUCCESS", "OK", result.toString());

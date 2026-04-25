@@ -51,7 +51,7 @@
                          -fx-padding: 28 40;">
                 <HBox alignment="CENTER_LEFT" spacing="16">
                     <VBox spacing="4" HBox.hgrow="ALWAYS">
-                        <Label text="Phiên đấu giá đang diễn ra"
+                        <Label fx:id="headerTitleLabel" text="Phiên đấu giá đang diễn ra"
                                style="-fx-font-size: 24px; -fx-font-weight: bold; -fx-text-fill: white;" />
                         <Label fx:id="statusLabel" text="Đang tải danh sách..."
                                style="-fx-font-size: 13px; -fx-text-fill: #adb5bd;" />
@@ -62,6 +62,18 @@
                                    -fx-background-radius: 8; -fx-padding: 10 22;" />
                 </HBox>
             </VBox>
+
+            <!-- Filter tabs -->
+            <HBox alignment="CENTER_LEFT" spacing="8"
+                  style="-fx-background-color: white; -fx-border-color: #e9ecef;
+                         -fx-border-width: 0 0 1 0; -fx-padding: 12 40;">
+                <Button fx:id="tabRunningButton"  text="🔥  Đang diễn ra"
+                        onAction="#handleFilterRunning" />
+                <Button fx:id="tabFinishedButton" text="🏁  Đã kết thúc"
+                        onAction="#handleFilterFinished" />
+                <Button fx:id="tabAllButton"      text="📋  Tất cả"
+                        onAction="#handleFilterAll" />
+            </HBox>
 
             <!-- Card grid wrapper -->
             <StackPane VBox.vgrow="ALWAYS" style="-fx-background-color: #f0f2f5;">

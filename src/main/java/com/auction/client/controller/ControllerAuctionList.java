@@ -43,14 +43,22 @@ public class ControllerAuctionList {
 
     @FXML private Label     welcomeLabel;
     @FXML private Label     statusLabel;
+    @FXML private Label     headerTitleLabel;
     @FXML private Button    sellerDashboardButton;
     @FXML private FlowPane  cardContainer;
     @FXML private ScrollPane scrollPane;
     @FXML private VBox      emptyState;
+    // Filter tabs
+    @FXML private Button    tabRunningButton;
+    @FXML private Button    tabFinishedButton;
+    @FXML private Button    tabAllButton;
 
     private final Gson gson = new Gson();
     private final List<AuctionItem> data = new ArrayList<>();
     private Timeline countdownTimer;
+
+    /** Filter hiện tại: "RUNNING" (mặc định), "FINISHED", "ALL". */
+    private String currentFilter = "RUNNING";
 
     /** Offset đồng hồ client-server (fix #25). */
     private volatile java.time.Duration clockOffset = java.time.Duration.ZERO;
@@ -77,7 +85,53 @@ public class ControllerAuctionList {
         countdownTimer.setCycleCount(Timeline.INDEFINITE);
         countdownTimer.play();
 
+        applyTabStyles();
         loadAuctions();
+    }
+
+    // ─── Filter tabs ─────────────────────────────────────────────────────────
+
+    @FXML private void handleFilterRunning()  { switchFilter("RUNNING");  }
+    @FXML private void handleFilterFinished() { switchFilter("FINISHED"); }
+    @FXML private void handleFilterAll()      { switchFilter("ALL");      }
+
+    private void switchFilter(String filter) {
+        if (filter.equals(currentFilter)) return;
+        currentFilter = filter;
+        applyTabStyles();
+        updateHeaderTitle();
+        loadAuctions();
+    }
+
+    private void applyTabStyles() {
+        styleTab(tabRunningButton,  "RUNNING");
+        styleTab(tabFinishedButton, "FINISHED");
+        styleTab(tabAllButton,      "ALL");
+    }
+
+    private void styleTab(Button btn, String filter) {
+        if (btn == null) return;
+        boolean active = filter.equals(currentFilter);
+        if (active) {
+            btn.setStyle("-fx-background-color: #1a1a2e; -fx-text-fill: white; "
+                       + "-fx-font-size: 13px; -fx-font-weight: bold; -fx-cursor: hand; "
+                       + "-fx-background-radius: 8; -fx-padding: 8 18;");
+        } else {
+            btn.setStyle("-fx-background-color: transparent; -fx-text-fill: #495057; "
+                       + "-fx-font-size: 13px; -fx-font-weight: bold; -fx-cursor: hand; "
+                       + "-fx-background-radius: 8; -fx-padding: 8 18; "
+                       + "-fx-border-color: #dee2e6; -fx-border-radius: 8; -fx-border-width: 1;");
+        }
+    }
+
+    private void updateHeaderTitle() {
+        if (headerTitleLabel == null) return;
+        String title = switch (currentFilter) {
+            case "FINISHED" -> "Phiên đã kết thúc";
+            case "ALL"      -> "Tất cả phiên đấu giá";
+            default         -> "Phiên đấu giá đang diễn ra";
+        };
+        headerTitleLabel.setText(title);
     }
 
     // ─── Refresh / Nav ───────────────────────────────────────────────────────
@@ -118,8 +172,13 @@ public class ControllerAuctionList {
         data.clear();
         cardContainer.getChildren().clear();
 
+        // Gửi filter hiện tại (RUNNING/FINISHED/ALL) cho server
+        JsonObject req = new JsonObject();
+        req.addProperty("filter", currentFilter);
+        final String reqPayload = req.toString();
+
         new Thread(() -> {
-            Response response = ServerConnection.getInstance().sendRequest("GET_AUCTIONS", "{}");
+            Response response = ServerConnection.getInstance().sendRequest("GET_AUCTIONS", reqPayload);
 
             Platform.runLater(() -> {
                 if ("SUCCESS".equals(response.getStatus()) && response.getPayload() != null) {
@@ -147,14 +206,30 @@ public class ControllerAuctionList {
                     data.addAll(items);
                     renderCards();
                     statusLabel.setText(items.isEmpty()
-                            ? "Hiện chưa có phiên nào — chờ seller đăng bán"
-                            : items.size() + " phiên đấu giá đang diễn ra");
+                            ? emptyMessageForFilter()
+                            : items.size() + " " + filterLabel());
                 } else {
                     statusLabel.setText("Lỗi: " + (response.getMessage() != null ? response.getMessage() : "không rõ"));
                     renderCards(); // show empty state
                 }
             });
         }).start();
+    }
+
+    private String filterLabel() {
+        return switch (currentFilter) {
+            case "FINISHED" -> "phiên đã kết thúc";
+            case "ALL"      -> "phiên đấu giá";
+            default         -> "phiên đấu giá đang diễn ra";
+        };
+    }
+
+    private String emptyMessageForFilter() {
+        return switch (currentFilter) {
+            case "FINISHED" -> "Chưa có phiên nào kết thúc";
+            case "ALL"      -> "Chưa có phiên đấu giá nào";
+            default         -> "Hiện chưa có phiên nào — chờ seller đăng bán";
+        };
     }
 
     private List<AuctionItem> parseAuctions(String json) {
@@ -178,6 +253,9 @@ public class ControllerAuctionList {
                 ai.currentPrice = obj.get("currentPrice").getAsDouble();
                 ai.status       = obj.get("status").getAsString();
                 ai.endTime      = obj.get("endTime").getAsString();
+                if (obj.has("winnerName") && !obj.get("winnerName").isJsonNull()) {
+                    ai.winnerName = obj.get("winnerName").getAsString();
+                }
                 list.add(ai);
             }
         } catch (Exception e) {
@@ -218,23 +296,31 @@ public class ControllerAuctionList {
      *  └───────────────────────┘
      */
     private VBox buildCard(AuctionItem item) {
+        boolean finished = isFinishedStatus(item.status);
+
         VBox card = new VBox();
         card.setPrefWidth(260);
         card.setMaxWidth(260);
-        card.setStyle("-fx-background-color: white; "
+        // Phiên kết thúc: opacity hạ, viền xám đậm hơn để phân biệt rõ
+        String cardStyle = "-fx-background-color: white; "
                 + "-fx-background-radius: 12; "
                 + "-fx-border-radius: 12; "
-                + "-fx-border-color: #e9ecef; "
+                + "-fx-border-color: " + (finished ? "#ced4da" : "#e9ecef") + "; "
                 + "-fx-border-width: 1; "
-                + "-fx-effect: dropshadow(gaussian, rgba(0,0,0,0.08), 10, 0, 0, 3);");
+                + "-fx-effect: dropshadow(gaussian, rgba(0,0,0,0.08), 10, 0, 0, 3);";
+        card.setStyle(cardStyle);
+        if (finished) card.setOpacity(0.92);
 
         // ── Hero block ───────────────────────────────────────────────────
         StackPane hero = new StackPane();
         hero.setPrefHeight(140);
-        String heroGradient = heroGradientForCategory(item.itemCategory);
+        // Phiên kết thúc dùng gradient xám thay cho gradient theo category
+        String heroGradient = finished
+                ? "linear-gradient(to bottom right, #6c757d, #495057)"
+                : heroGradientForCategory(item.itemCategory);
         hero.setStyle("-fx-background-color: " + heroGradient + "; "
                 + "-fx-background-radius: 12 12 0 0;");
-        Label emojiLabel = new Label(emojiForCategory(item.itemCategory));
+        Label emojiLabel = new Label(finished ? "🏁" : emojiForCategory(item.itemCategory));
         emojiLabel.setStyle("-fx-font-size: 64px;");
         hero.getChildren().add(emojiLabel);
 
@@ -249,46 +335,58 @@ public class ControllerAuctionList {
         name.setStyle("-fx-font-size: 15px; -fx-font-weight: bold; -fx-text-fill: #1a1a2e;");
         name.setWrapText(true);
 
-        // Badge category
+        // Badge category + status
         HBox badgeRow = new HBox(6);
         Label catBadge = new Label(categoryLabel(item.itemCategory));
         catBadge.setStyle("-fx-background-color: #eef2ff; -fx-text-fill: #4338ca; "
                 + "-fx-padding: 3 9; -fx-background-radius: 10; "
                 + "-fx-font-size: 10px; -fx-font-weight: bold;");
-        Label statusBadge = new Label("● " + ("RUNNING".equals(item.status) ? "Đang diễn ra" : "Mở"));
-        statusBadge.setStyle("-fx-background-color: #ecfdf5; -fx-text-fill: #047857; "
-                + "-fx-padding: 3 9; -fx-background-radius: 10; "
-                + "-fx-font-size: 10px; -fx-font-weight: bold;");
+
+        Label statusBadge = new Label("● " + statusDisplayText(item.status));
+        statusBadge.setStyle(statusBadgeStyle(item.status));
         badgeRow.getChildren().addAll(catBadge, statusBadge);
 
-        // Giá
-        Label priceLabel = new Label("Giá hiện tại");
+        // Giá — đổi label theo trạng thái
+        Label priceLabel = new Label(finished ? "Giá thắng" : "Giá hiện tại");
         priceLabel.setStyle("-fx-font-size: 10px; -fx-text-fill: #6c757d; "
                 + "-fx-padding: 6 0 0 0;");
         Label priceValue = new Label(String.format("%,.0f VNĐ", item.currentPrice));
-        priceValue.setStyle("-fx-font-size: 18px; -fx-font-weight: bold; -fx-text-fill: #e94560;");
+        priceValue.setStyle("-fx-font-size: 18px; -fx-font-weight: bold; -fx-text-fill: "
+                + (finished ? "#495057" : "#e94560") + ";");
 
-        // Countdown — cập nhật bởi timeline. Lưu vào userData để refresh tìm lại.
-        Label countdown = new Label("⏰ " + formatRemaining(item.endTime));
-        countdown.setStyle("-fx-font-size: 11px; -fx-text-fill: #495057; -fx-font-weight: bold;");
-        countdown.setUserData(item.endTime);
-        countdown.getProperties().put("role", "countdown");
+        // Countdown / Winner info
+        Label infoLine;
+        if (finished) {
+            String winnerText = (item.winnerName != null && !item.winnerName.isBlank())
+                    ? "👑 Người thắng: " + item.winnerName
+                    : "Không có người thắng";
+            infoLine = new Label(winnerText);
+            infoLine.setStyle("-fx-font-size: 11px; -fx-text-fill: #495057; -fx-font-weight: bold;");
+            infoLine.setWrapText(true);
+        } else {
+            infoLine = new Label("⏰ " + formatRemaining(item.endTime));
+            infoLine.setStyle("-fx-font-size: 11px; -fx-text-fill: #495057; -fx-font-weight: bold;");
+            infoLine.setUserData(item.endTime);
+            infoLine.getProperties().put("role", "countdown");
+        }
 
-        // Nút
-        Button btn = new Button("Vào đấu giá →");
+        // Nút — phiên kết thúc dùng button "Xem kết quả" màu xám
+        Button btn = new Button(finished ? "Xem kết quả →" : "Vào đấu giá →");
         btn.setMaxWidth(Double.MAX_VALUE);
-        String baseStyle = "-fx-background-color: #1a1a2e; -fx-text-fill: white; "
+        String baseColor  = finished ? "#6c757d" : "#1a1a2e";
+        String hoverColor = finished ? "#495057" : "#e94560";
+        String baseStyle = "-fx-background-color: " + baseColor + "; -fx-text-fill: white; "
                 + "-fx-font-size: 12px; -fx-font-weight: bold; -fx-cursor: hand; "
                 + "-fx-background-radius: 8; -fx-padding: 10 16;";
         btn.setStyle(baseStyle);
-        btn.setOnMouseEntered(e -> btn.setStyle(baseStyle.replace("#1a1a2e", "#e94560")));
+        btn.setOnMouseEntered(e -> btn.setStyle(baseStyle.replace(baseColor, hoverColor)));
         btn.setOnMouseExited(e -> btn.setStyle(baseStyle));
         btn.setOnAction(e -> openBiddingScreen(item, e));
 
         Region spacer = new Region();
         spacer.setMinHeight(4);
 
-        body.getChildren().addAll(name, badgeRow, priceLabel, priceValue, countdown, spacer, btn);
+        body.getChildren().addAll(name, badgeRow, priceLabel, priceValue, infoLine, spacer, btn);
         VBox.setVgrow(body, Priority.ALWAYS);
 
         card.getChildren().addAll(hero, body);
@@ -316,6 +414,38 @@ public class ControllerAuctionList {
                 findCountdownLabels(child);
             }
         }
+    }
+
+    // ─── Helpers: status display ─────────────────────────────────────────────
+
+    private boolean isFinishedStatus(String status) {
+        return "FINISHED".equalsIgnoreCase(status) || "CLOSED".equalsIgnoreCase(status);
+    }
+
+    private String statusDisplayText(String status) {
+        if (status == null) return "—";
+        return switch (status.toUpperCase()) {
+            case "RUNNING"  -> "Đang diễn ra";
+            case "OPEN"     -> "Sắp bắt đầu";
+            case "FINISHED" -> "Đã kết thúc";
+            case "CLOSED"   -> "Đã đóng";
+            default         -> status;
+        };
+    }
+
+    private String statusBadgeStyle(String status) {
+        // (bg, text) cho từng trạng thái
+        String bg, fg;
+        switch (status == null ? "" : status.toUpperCase()) {
+            case "RUNNING"  -> { bg = "#ecfdf5"; fg = "#047857"; }      // xanh lá
+            case "OPEN"     -> { bg = "#fffbeb"; fg = "#b45309"; }      // vàng
+            case "FINISHED" -> { bg = "#f1f3f5"; fg = "#495057"; }      // xám
+            case "CLOSED"   -> { bg = "#f1f3f5"; fg = "#6c757d"; }      // xám nhạt
+            default         -> { bg = "#eef2ff"; fg = "#4338ca"; }      // indigo
+        }
+        return "-fx-background-color: " + bg + "; -fx-text-fill: " + fg + "; "
+             + "-fx-padding: 3 9; -fx-background-radius: 10; "
+             + "-fx-font-size: 10px; -fx-font-weight: bold;";
     }
 
     // ─── Helpers: emoji / gradient / format ─────────────────────────────────
@@ -410,5 +540,6 @@ public class ControllerAuctionList {
         public double currentPrice;
         public String status;
         public String endTime;
+        public String winnerName;   // null nếu chưa có ai thắng
     }
 }

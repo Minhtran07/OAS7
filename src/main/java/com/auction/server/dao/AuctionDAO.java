@@ -78,13 +78,48 @@ public class AuctionDAO {
      * Phiên CLOSED/FINISHED bị ẩn — đúng nghĩa "phiên đang diễn ra".
      */
     public List<AuctionRow> getAllAuctions() {
+        return queryAuctions(
+                "WHERE a.status IN ('OPEN','RUNNING') ORDER BY a.end_time ASC");
+    }
+
+    /**
+     * Lấy TẤT CẢ phiên (kể cả FINISHED, CLOSED) — dùng cho client view với
+     * filter "Tất cả" hoặc "Đã kết thúc". Phiên đang chạy lên đầu, kế tiếp là
+     * phiên kết thúc gần nhất.
+     */
+    public List<AuctionRow> getAuctionsByStatuses(List<String> statuses) {
+        if (statuses == null || statuses.isEmpty()) {
+            // Mặc định: tất cả status có ý nghĩa
+            statuses = java.util.Arrays.asList("OPEN", "RUNNING", "FINISHED", "CLOSED");
+        }
+        StringBuilder placeholders = new StringBuilder();
+        for (int i = 0; i < statuses.size(); i++) {
+            if (i > 0) placeholders.append(',');
+            placeholders.append('\'').append(statuses.get(i).replace("'", "''")).append('\'');
+        }
+        String where = "WHERE a.status IN (" + placeholders + ") "
+                     // OPEN/RUNNING trước (sắp kết thúc trước),
+                     // FINISHED/CLOSED sau (mới kết thúc trước)
+                     + "ORDER BY CASE a.status "
+                     + "  WHEN 'RUNNING'  THEN 1 "
+                     + "  WHEN 'OPEN'     THEN 2 "
+                     + "  WHEN 'FINISHED' THEN 3 "
+                     + "  WHEN 'CLOSED'   THEN 4 "
+                     + "  ELSE 5 END, "
+                     + "a.end_time DESC";
+        return queryAuctions(where);
+    }
+
+    /** Helper chung cho getAllAuctions / getAuctionsByStatuses. */
+    private List<AuctionRow> queryAuctions(String whereOrderClause) {
         List<AuctionRow> list = new ArrayList<>();
         String sql = "SELECT a.*, i.name AS item_name, i.category AS item_category, "
-                   + "       i.description AS item_description "
+                   + "       i.description AS item_description, "
+                   + "       u.fullname AS winner_name "
                    + "FROM auctions a "
-                   + "LEFT JOIN items i ON a.item_id = i.id "
-                   + "WHERE a.status IN ('OPEN','RUNNING') "
-                   + "ORDER BY a.end_time ASC";  // sắp theo "sắp kết thúc" trước
+                   + "LEFT JOIN items i ON a.item_id   = i.id "
+                   + "LEFT JOIN users u ON a.winner_id = u.id "
+                   + whereOrderClause;
 
         try (Connection conn = DatabaseConnection.getInstance().getConnection();
              Statement stmt = conn.createStatement();
@@ -97,11 +132,14 @@ public class AuctionDAO {
                     row.itemCategory    = rs.getString("item_category");
                     row.itemDescription = rs.getString("item_description");
                 } catch (SQLException ignore) { /* bảng cũ không có cột */ }
+                try {
+                    row.winnerName = rs.getString("winner_name");
+                } catch (SQLException ignore) { /* không có winner */ }
                 list.add(row);
             }
 
         } catch (SQLException e) {
-            logger.error("Lỗi lấy danh sách phiên đang diễn ra: {}", e.getMessage());
+            logger.error("Lỗi lấy danh sách phiên: {}", e.getMessage());
         }
         return list;
     }

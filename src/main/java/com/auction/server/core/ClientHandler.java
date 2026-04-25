@@ -72,7 +72,7 @@ public class ClientHandler implements Runnable { // implements Runnable để bi
                         response = handlePlaceBid(request.getPayload());
                         break;
                     case "GET_AUCTIONS":
-                        response = handleGetAuctions();
+                        response = handleGetAuctions(request.getPayload());
                         break;
                     case "CREATE_AUCTION":
                         response = handleCreateAuction(request.getPayload());
@@ -225,17 +225,46 @@ public class ClientHandler implements Runnable { // implements Runnable để bi
     }
 
     private Response handleGetAuctions() {
-        try {
-            java.util.List<AuctionDAO.AuctionRow> auctions = auctionDAO.getAllAuctions();
-            logger.info("GET_AUCTIONS: trả về {} phiên đấu giá", auctions.size());
+        return handleGetAuctions("{}");
+    }
 
-            // Gói list auctions + serverNow vào 1 JsonObject để client đồng bộ đồng hồ.
-            // Giữ backward-compat: nếu client cũ parse bằng JsonArray, sẽ lỗi → nhưng
-            // client đi kèm đã update. Cách an toàn hơn: vẫn trả array, serverNow
-            // đi trong Response.message ở dạng "OK|serverNow=..." — chọn cách thêm
-            // wrapper object rõ ràng hơn.
+    /**
+     * Lấy danh sách phiên — hỗ trợ filter qua payload:
+     *   { "filter": "RUNNING" }   → chỉ phiên đang diễn ra (OPEN+RUNNING) — mặc định
+     *   { "filter": "FINISHED" }  → chỉ phiên đã kết thúc
+     *   { "filter": "ALL" }       → tất cả
+     * Filter null/missing = RUNNING để giữ backward-compat với client cũ.
+     */
+    private Response handleGetAuctions(String payload) {
+        try {
+            String filter = "RUNNING";
+            try {
+                JsonObject data = gson.fromJson(payload, JsonObject.class);
+                if (data != null && data.has("filter") && !data.get("filter").isJsonNull()) {
+                    filter = data.get("filter").getAsString().toUpperCase();
+                }
+            } catch (Exception ignore) { /* payload có thể là "{}" hoặc null */ }
+
+            java.util.List<AuctionDAO.AuctionRow> auctions;
+            switch (filter) {
+                case "FINISHED":
+                    auctions = auctionDAO.getAuctionsByStatuses(
+                            java.util.Arrays.asList("FINISHED", "CLOSED"));
+                    break;
+                case "ALL":
+                    auctions = auctionDAO.getAuctionsByStatuses(
+                            java.util.Arrays.asList("OPEN", "RUNNING", "FINISHED", "CLOSED"));
+                    break;
+                case "RUNNING":
+                default:
+                    auctions = auctionDAO.getAllAuctions();
+                    break;
+            }
+            logger.info("GET_AUCTIONS[{}]: trả về {} phiên", filter, auctions.size());
+
             JsonObject wrapper = new JsonObject();
             wrapper.add("auctions", gson.toJsonTree(auctions));
+            wrapper.addProperty("filter", filter);
             wrapper.addProperty("serverNow", java.time.LocalDateTime.now().toString());
             return new Response("SUCCESS", "OK", wrapper.toString());
         } catch (Exception e) {

@@ -196,3 +196,30 @@ AUCTION_SERVER_HOST=192.168.1.50 AUCTION_SERVER_PORT=4000 ./run-client.sh
 | **BIDDER** | Đặt giá thủ công, đăng ký auto-bid |
 
 Khi Seller mở phiên đấu giá, UI sẽ ẩn form đặt giá và hiển thị badge **"👁 Chế độ theo dõi — Seller không thể đặt giá"**.
+
+---
+
+## 6. Cơ chế xử lý đồng thời (auto-bid + chart sync)
+
+Hệ thống cho phép nhiều client cùng đặt giá / đăng ký auto-bid trên cùng một phiên mà vẫn đảm bảo:
+
+- Không có lost update — mỗi bid đều ATOMIC giữa RAM và DB.
+- Auto-bid của 2+ client đăng ký TUẦN TỰ vẫn chạy được "cuộc war" đầy đủ tới khi 1 bên hết maxBid (giống proxy bid của eBay).
+- Chart và lịch sử bid đồng bộ giữa các client kể cả khi đồng hồ máy lệch nhau.
+- Phiên #1 không bị block bởi phiên #2 (mỗi phiên có lock riêng).
+
+Chi tiết kỹ thuật xem [`docs/AUTO_BID_CONCURRENCY.md`](docs/AUTO_BID_CONCURRENCY.md):
+
+- Lock per-auction với `ReentrantLock` riêng cho mỗi `auctionId`.
+- Pattern atomic: save-state → update RAM → write DB → rollback nếu DB fail, tất cả trong cùng critical section.
+- Vòng lặp `triggerAutoBids` tối đa 100 vòng counter-bid liên tiếp, mỗi vòng loại winner trước đó.
+- `BidEvent.bidTime` từ server + `serverNow()` offset ở client để chart đồng bộ trục thời gian.
+- Snapshot-then-stream pattern (`historyLoaded` flag) tránh duplicate điểm chart cho client vào sau.
+
+Verify bằng test:
+
+```bash
+mvn test -Dtest=AuctionManagerAutoBidTest
+```
+
+Kỳ vọng: `Tests run: 10, Failures: 0`.

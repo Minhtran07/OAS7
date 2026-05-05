@@ -215,9 +215,24 @@ public class ControllerBidding implements ServerConnection.PushListener {
     /**
      * Thêm điểm mới vào chart (phải gọi trên JavaFX thread).
      * Tự động xóa điểm cũ khi vượt MAX_CHART_POINTS.
+     *
+     * @param price giá mới của bid
+     * @param serverBidTime ISO-8601 string thời gian bid theo SERVER
+     *                      (từ event.bidTime). Nếu null/parse lỗi → fallback
+     *                      sang serverNow() để vẫn dùng đồng hồ server đã offset.
      */
-    private void addChartPoint(double price) {
-        String timeLabel = LocalDateTime.now().format(TIME_FMT);
+    private void addChartPoint(double price, String serverBidTime) {
+        LocalDateTime ts;
+        if (serverBidTime != null && !serverBidTime.isBlank()) {
+            try {
+                ts = LocalDateTime.parse(serverBidTime);
+            } catch (Exception e) {
+                ts = serverNow();
+            }
+        } else {
+            ts = serverNow();
+        }
+        String timeLabel = ts.format(TIME_FMT);
 
         // Nếu trùng giây thì thêm đuôi để label không bị collapse
         long sameCount = priceSeries.getData().stream()
@@ -260,8 +275,9 @@ public class ControllerBidding implements ServerConnection.PushListener {
             // Nếu giá hiện tại > giá khởi điểm, vẽ thêm 1 điểm "hiện tại"
             // để chart hiển thị có ý nghĩa thay vì chỉ 1 chấm cô lập.
             if (currentPrice > base) {
+                // Dùng serverNow() để nhãn đồng bộ với các điểm chart khác (đã offset).
                 priceSeries.getData().add(new XYChart.Data<>(
-                        LocalDateTime.now().format(TIME_FMT), currentPrice));
+                        serverNow().format(TIME_FMT), currentPrice));
             }
             updateChartStats();
         }
@@ -281,12 +297,13 @@ public class ControllerBidding implements ServerConnection.PushListener {
                 case "BID_UPDATE":
                     currentPrice = event.newPrice;
                     updatePriceDisplay(event.newPrice, event.winnerName);
-                    appendHistory(event.winnerName, event.newPrice);
+                    // Bug #3 fix: dùng bidTime từ server làm timestamp lịch sử.
+                    appendHistory(event.winnerName, event.newPrice, event.bidTime);
                     // Chỉ thêm điểm chart sau khi history snapshot đã apply.
                     // Nếu chưa, applyAuctionState() sẽ replay full history (bao
                     // gồm bid này) → không bỏ sót dữ liệu, mà tránh duplicate.
                     if (historyLoaded) {
-                        addChartPoint(event.newPrice);
+                        addChartPoint(event.newPrice, event.bidTime);
                     }
                     showBidMessage("💡 Có giá mới: " + formatPrice(event.newPrice), false);
                     break;
@@ -301,7 +318,7 @@ public class ControllerBidding implements ServerConnection.PushListener {
                     currentPrice = event.newPrice;
                     updatePriceDisplay(event.newPrice, event.winnerName + " 🏆");
                     if (historyLoaded) {
-                        addChartPoint(event.newPrice);
+                        addChartPoint(event.newPrice, event.bidTime);
                     }
                     bidButton.setDisable(true);
                     showBidMessage("🎉 Phiên kết thúc! Người thắng: " + event.winnerName, true);
@@ -747,8 +764,17 @@ public class ControllerBidding implements ServerConnection.PushListener {
                 : "-fx-text-fill:#e74c3c;-fx-font-size:12px;");
     }
 
-    private void appendHistory(String name, double amount) {
-        String time = LocalDateTime.now().format(TIME_FMT);
+    private void appendHistory(String name, double amount, String serverBidTime) {
+        // Bug #3 fix: dùng thời điểm bid theo server thay vì now() local.
+        // Nhờ vậy 2 client có giờ lệch vẫn thấy lịch sử hoàn toàn giống nhau.
+        LocalDateTime ts;
+        if (serverBidTime != null && !serverBidTime.isBlank()) {
+            try { ts = LocalDateTime.parse(serverBidTime); }
+            catch (Exception e) { ts = serverNow(); }
+        } else {
+            ts = serverNow();
+        }
+        String time = ts.format(TIME_FMT);
         historyLog.insert(0,
                 String.format("[%s] %s → %s\n", time, name, formatPrice(amount)));
         bidHistoryLabel.setText(

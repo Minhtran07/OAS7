@@ -245,8 +245,11 @@ public class AuctionManager {
             logger.info("Đã đăng ký auto-bid phiên #{}: {} maxBid={} increment={}",
                     auctionId, bidder.getUsername(), maxBid, increment);
 
-            // Thử trigger ngay nếu giá hiện tại thấp hơn maxBid của bidder này
-            triggerAutoBids(auctionId, auction, -1);
+            // Thử trigger ngay — loại trừ winner hiện tại để không tự đẩy giá chính
+            // mình khi vừa đăng ký xong mà đang dẫn đầu (Bug #4: trước đây truyền -1
+            // khiến hệ thống có thể tự counter cho chính bidder vừa đăng ký).
+            int currentWinnerId = auction.getHighestBidderId();
+            triggerAutoBids(auctionId, auction, currentWinnerId);
 
             return true;
         } finally {
@@ -255,65 +258,99 @@ public class AuctionManager {
     }
 
     /**
+     * Số vòng counter tối đa trong 1 lần trigger — chống vòng lặp vô hạn nếu
+     * có lỗi logic (ví dụ increment=0). Thực tế cuộc "war" giữa 2 auto-bid
+     * sẽ kết thúc nhanh hơn nhiều (khi 1 bên hết maxBid).
+     */
+    private static final int AUTO_BID_MAX_ROUNDS = 100;
+
+    /**
      * Sau mỗi bid thành công, duyệt queue auto-bid và tự counter-bid.
      * Gọi trong khi đang giữ lock.
      *
-     * @param excludeBidderId bidderId vừa thắng — không tự bid lại chính mình
+     * Bug #1 fix: chạy VÒNG LẶP đối đầu — sau mỗi nhịp counter của 1 bidder,
+     * loại bidder đó ra khỏi vòng tiếp theo và tìm tiếp bidder khác có thể
+     * counter. Cuộc war chỉ kết thúc khi không còn bidder nào (≠ winner hiện tại)
+     * có thể đặt nổi `currentPrice + increment ≤ maxBid` — y chang cách proxy
+     * bid của eBay vận hành.
+     *
+     * Trước đây hàm chỉ counter 1 lần rồi return → khi 2 client cùng đăng ký
+     * auto-bid, người đăng ký sau (max cao hơn) chỉ đẩy giá lên 1 nấc rồi dừng,
+     * người đăng ký trước không được phản công.
+     *
+     * @param excludeBidderId bidderId không được phép tự bid (winner hiện tại)
      */
     private void triggerAutoBids(int auctionId, Auction auction, int excludeBidderId) {
         PriorityQueue<AutoBidEntry> queue = autoBidQueues.get(auctionId);
         if (queue == null || queue.isEmpty()) return;
 
-        // Tìm auto-bid tốt nhất có thể counter (không phải người vừa thắng)
-        AutoBidEntry best = null;
-        for (AutoBidEntry entry : queue) {
-            if (entry.bidderId == excludeBidderId) continue;
-            BigDecimal nextBid = auction.getCurrentPrice().add(entry.increment);
-            if (nextBid.compareTo(entry.maxBid) <= 0) {
-                best = entry;
-                break; // queue đã sắp xếp theo maxBid desc → best là người đầu tiên
+        int lastBidderId = excludeBidderId;
+
+        for (int round = 0; round < AUTO_BID_MAX_ROUNDS; round++) {
+            // Tìm auto-bid tốt nhất có thể counter (không phải người vừa thắng vòng trước)
+            AutoBidEntry best = null;
+            for (AutoBidEntry entry : queue) {
+                if (entry.bidderId == lastBidderId) continue;
+                BigDecimal nextBid = auction.getCurrentPrice().add(entry.increment);
+                if (nextBid.compareTo(entry.maxBid) <= 0) {
+                    best = entry;
+                    break; // queue đã sắp xếp theo maxBid desc → best là người đầu tiên
+                }
             }
-        }
 
-        if (best == null) return;
-
-        BigDecimal autoBidAmount = auction.getCurrentPrice().add(best.increment);
-
-        // Lưu state cũ để rollback nếu DB fail
-        BigDecimal prevPrice  = auction.getCurrentPrice();
-        Bidder     prevWinner = auction.getCurrentWinner();
-        int        prevWinId  = auction.getHighestBidderId();
-
-        boolean ok = auction.updateBid(best.bidder, autoBidAmount);
-        if (!ok) return;
-
-        // Ghi DB cho auto-bid (cũng atomic như manual bid)
-        if (auctionDAO != null) {
-            boolean dbOk =
-                    auctionDAO.recordBid(auctionId, best.bidderId, autoBidAmount.doubleValue())
-                 && auctionDAO.updateCurrentPrice(auctionId, autoBidAmount.doubleValue(), best.bidderId);
-            if (!dbOk) {
-                auction.setCurrentPrice(prevPrice);
-                auction.setCurrentWinner(prevWinner);
-                auction.setHighestBidderId(prevWinId);
-                logger.error("Rollback auto-bid phiên #{} do DB fail", auctionId);
+            if (best == null) {
+                // Không còn ai counter được → war kết thúc
+                if (round > 0) {
+                    logger.info("Auto-bid war phiên #{} kết thúc sau {} vòng, giá cuối: {}",
+                            auctionId, round, auction.getCurrentPrice());
+                }
                 return;
             }
+
+            BigDecimal autoBidAmount = auction.getCurrentPrice().add(best.increment);
+
+            // Lưu state cũ để rollback nếu DB fail
+            BigDecimal prevPrice  = auction.getCurrentPrice();
+            Bidder     prevWinner = auction.getCurrentWinner();
+            int        prevWinId  = auction.getHighestBidderId();
+
+            boolean ok = auction.updateBid(best.bidder, autoBidAmount);
+            if (!ok) return;
+
+            // Ghi DB cho auto-bid (cũng atomic như manual bid)
+            if (auctionDAO != null) {
+                boolean dbOk =
+                        auctionDAO.recordBid(auctionId, best.bidderId, autoBidAmount.doubleValue())
+                     && auctionDAO.updateCurrentPrice(auctionId, autoBidAmount.doubleValue(), best.bidderId);
+                if (!dbOk) {
+                    auction.setCurrentPrice(prevPrice);
+                    auction.setCurrentWinner(prevWinner);
+                    auction.setHighestBidderId(prevWinId);
+                    logger.error("Rollback auto-bid phiên #{} do DB fail", auctionId);
+                    return;
+                }
+            }
+
+            logger.info("Auto-bid phiên #{} (vòng {}): {} tự động đặt {}",
+                    auctionId, round + 1, best.bidder.getUsername(), autoBidAmount);
+
+            checkAntiSnipe(auctionId, auction);
+
+            BidEventBus.getInstance().broadcast(auctionId,
+                BidEventBus.BidEvent.bidUpdate(
+                    auctionId,
+                    autoBidAmount.doubleValue(),
+                    best.bidderId,
+                    best.bidder.getFullname() + " (auto)"
+                )
+            );
+
+            // Vòng tiếp theo: loại winner vừa rồi ra để tìm đối thủ phản công
+            lastBidderId = best.bidderId;
         }
 
-        logger.info("Auto-bid phiên #{}: {} tự động đặt {}", auctionId,
-                best.bidder.getUsername(), autoBidAmount);
-
-        checkAntiSnipe(auctionId, auction);
-
-        BidEventBus.getInstance().broadcast(auctionId,
-            BidEventBus.BidEvent.bidUpdate(
-                auctionId,
-                autoBidAmount.doubleValue(),
-                best.bidderId,
-                best.bidder.getFullname() + " (auto)"
-            )
-        );
+        logger.warn("Auto-bid phiên #{} đạt giới hạn {} vòng — dừng để chống vòng lặp",
+                auctionId, AUTO_BID_MAX_ROUNDS);
     }
 
     // ─── Anti-Sniping ─────────────────────────────────────────────────────────

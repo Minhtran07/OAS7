@@ -104,6 +104,13 @@ public class BidEventBus {
         public int winnerId;
         public String winnerName;
         public String newEndTime;  // dùng khi anti-sniping gia hạn
+        /**
+         * Bug #3 fix: thời điểm bid theo đồng hồ SERVER (ISO-8601).
+         * Client dùng field này làm nhãn trục X của chart thay vì
+         * LocalDateTime.now() local — nhờ vậy 2 client có giờ lệch
+         * vẫn vẽ điểm chart cùng nhãn thời gian → đồng bộ.
+         */
+        public String bidTime;
 
         public static BidEvent bidUpdate(int auctionId, double price, int winnerId, String winnerName) {
             BidEvent e = new BidEvent();
@@ -112,6 +119,7 @@ public class BidEventBus {
             e.newPrice   = price;
             e.winnerId   = winnerId;
             e.winnerName = winnerName;
+            e.bidTime    = java.time.LocalDateTime.now().toString();
             return e;
         }
 
@@ -130,6 +138,7 @@ public class BidEventBus {
             e.winnerId   = winnerId;
             e.winnerName = winnerName;
             e.newPrice   = finalPrice;
+            e.bidTime    = java.time.LocalDateTime.now().toString();
             return e;
         }
     }

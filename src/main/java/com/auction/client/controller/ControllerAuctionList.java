@@ -47,7 +47,8 @@ public class ControllerAuctionList {
     @FXML private Label     statusLabel;
     @FXML private Label     headerTitleLabel;
     @FXML private Button    sellerDashboardButton;
-    @FXML private Button    cartButton;
+    @FXML private Button    bellButton;            // chuông thông báo (thay MyCart)
+    @FXML private Label     bellBadgeLabel;        // badge số unread
     @FXML private FlowPane  cardContainer;
     @FXML private ScrollPane scrollPane;
     @FXML private VBox      emptyState;
@@ -101,6 +102,53 @@ public class ControllerAuctionList {
         applyTabStyles();
         setupSearchAndCategory();
         loadAuctions();
+
+        // Gắn notification listener để badge chuông cập nhật realtime
+        setupNotificationListener();
+        refreshBellBadge();
+    }
+
+    /** Đăng ký listener cho PUSH:NOTIFICATION:... — chỉ cập nhật badge. */
+    private void setupNotificationListener() {
+        ServerConnection.getInstance().setNotificationListener(json -> {
+            try {
+                JsonObject obj = gson.fromJson(json, JsonObject.class);
+                if (obj.has("unreadCount") && !obj.get("unreadCount").isJsonNull()) {
+                    int unread = obj.get("unreadCount").getAsInt();
+                    updateBellBadge(unread);
+                }
+            } catch (Exception ignore) {}
+        });
+    }
+
+    /** Gọi server GET_UNREAD_COUNT để load lại badge khi cần. */
+    private void refreshBellBadge() {
+        if (!UserSession.getInstance().isLoggedIn()) return;
+        int userId = UserSession.getInstance().getCurrentUser().getId();
+        JsonObject p = new JsonObject();
+        p.addProperty("userId", userId);
+        new Thread(() -> {
+            Response r = ServerConnection.getInstance().sendRequest("GET_UNREAD_COUNT", p.toString());
+            if ("SUCCESS".equals(r.getStatus()) && r.getPayload() != null) {
+                try {
+                    JsonObject obj = gson.fromJson(r.getPayload(), JsonObject.class);
+                    int unread = obj.has("unreadCount") ? obj.get("unreadCount").getAsInt() : 0;
+                    Platform.runLater(() -> updateBellBadge(unread));
+                } catch (Exception ignore) {}
+            }
+        }).start();
+    }
+
+    private void updateBellBadge(int unread) {
+        if (bellBadgeLabel == null) return;
+        if (unread <= 0) {
+            bellBadgeLabel.setVisible(false);
+            bellBadgeLabel.setManaged(false);
+        } else {
+            bellBadgeLabel.setText(unread > 99 ? "99+" : String.valueOf(unread));
+            bellBadgeLabel.setVisible(true);
+            bellBadgeLabel.setManaged(true);
+        }
     }
 
     private void setupSearchAndCategory() {
@@ -184,12 +232,16 @@ public class ControllerAuctionList {
     }
 
     @FXML
-    private void handleOpenCart(ActionEvent event) throws IOException {
-        stopTimer();
-        Stage stage = (Stage) ((Node) event.getSource()).getScene().getWindow();
-        SceneUtil.navigate(stage,
-                MainClient.class.getResource("/client/fxml/my_cart.fxml"),
-                "Giỏ đấu giá — Phiên của tôi");
+    private void handleOpenNotifications(javafx.event.Event event) {
+        // Mở popup notification (modal nhỏ). Stage hiện tại không đổi scene.
+        try {
+            javafx.scene.Node src = (javafx.scene.Node)
+                    (event != null ? event.getSource() : bellButton);
+            Stage owner = (Stage) src.getScene().getWindow();
+            ControllerNotification.openAsPopup(owner, () -> refreshBellBadge());
+        } catch (Exception ex) {
+            statusLabel.setText("Không thể mở thông báo: " + ex.getMessage());
+        }
     }
 
     @FXML

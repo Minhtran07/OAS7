@@ -99,13 +99,15 @@ public class AuctionDAO {
         }
         String where = "WHERE a.status IN (" + placeholders + ") "
                      // OPEN/RUNNING trước (sắp kết thúc trước),
-                     // FINISHED/CLOSED sau (mới kết thúc trước)
+                     // FINISHED → PAID → CANCELED → CLOSED (mới kết thúc trước)
                      + "ORDER BY CASE a.status "
                      + "  WHEN 'RUNNING'  THEN 1 "
                      + "  WHEN 'OPEN'     THEN 2 "
                      + "  WHEN 'FINISHED' THEN 3 "
-                     + "  WHEN 'CLOSED'   THEN 4 "
-                     + "  ELSE 5 END, "
+                     + "  WHEN 'PAID'     THEN 4 "
+                     + "  WHEN 'CANCELED' THEN 5 "
+                     + "  WHEN 'CLOSED'   THEN 6 "
+                     + "  ELSE 7 END, "
                      + "a.end_time DESC";
         return queryAuctions(where);
     }
@@ -389,6 +391,102 @@ public class AuctionDAO {
         return null;
     }
 
+    /**
+     * Lấy danh sách auctionId mà bidder đã từng tham gia bid — dùng để
+     * thông báo khi seller mở lại đấu giá cho 1 item.
+     */
+    public List<Integer> getBidderIdsForItem(int itemId) {
+        List<Integer> list = new ArrayList<>();
+        String sql = "SELECT DISTINCT b.bidder_id FROM bids b "
+                   + "JOIN auctions a ON b.auction_id = a.id "
+                   + "WHERE a.item_id = ?";
+        try (Connection conn = DatabaseConnection.getInstance().getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, itemId);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) list.add(rs.getInt(1));
+            }
+        } catch (SQLException e) {
+            logger.error("Lỗi getBidderIdsForItem #{}: {}", itemId, e.getMessage());
+        }
+        return list;
+    }
+
+    /**
+     * Trả về sellerId của 1 phiên (qua item).
+     */
+    public int getSellerIdForAuction(int auctionId) {
+        String sql = "SELECT i.seller_id FROM auctions a "
+                   + "JOIN items i ON a.item_id = i.id WHERE a.id = ?";
+        try (Connection conn = DatabaseConnection.getInstance().getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, auctionId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) return rs.getInt(1);
+            }
+        } catch (SQLException e) {
+            logger.error("Lỗi getSellerIdForAuction #{}: {}", auctionId, e.getMessage());
+        }
+        return -1;
+    }
+
+    /**
+     * Trả về danh sách bidderId DISTINCT trong 1 phiên (để thông báo phiên kết thúc).
+     */
+    public List<Integer> getBidderIdsForAuction(int auctionId) {
+        List<Integer> list = new ArrayList<>();
+        String sql = "SELECT DISTINCT bidder_id FROM bids WHERE auction_id = ?";
+        try (Connection conn = DatabaseConnection.getInstance().getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, auctionId);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) list.add(rs.getInt(1));
+            }
+        } catch (SQLException e) {
+            logger.error("Lỗi getBidderIdsForAuction #{}: {}", auctionId, e.getMessage());
+        }
+        return list;
+    }
+
+    /**
+     * Ghi timestamp finished_at = now. Gọi khi auction kết thúc — dùng cho
+     * scheduler tính timeout 12h.
+     */
+    public boolean updateFinishedAt(int auctionId) {
+        String sql = "UPDATE auctions SET finished_at = datetime('now','localtime') WHERE id = ?";
+        try (Connection conn = DatabaseConnection.getInstance().getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, auctionId);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            logger.error("Lỗi updateFinishedAt: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Lấy tất cả phiên FINISHED + có finished_at — để scheduler quét timeout.
+     */
+    public List<AuctionRow> getFinishedAwaitingPayment() {
+        List<AuctionRow> list = new ArrayList<>();
+        String sql = "SELECT a.*, i.name AS item_name FROM auctions a "
+                   + "LEFT JOIN items i ON a.item_id = i.id "
+                   + "WHERE a.status = 'FINISHED' AND a.finished_at IS NOT NULL";
+        try (Connection conn = DatabaseConnection.getInstance().getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            while (rs.next()) {
+                AuctionRow row = mapRow(rs);
+                try { row.itemName = rs.getString("item_name"); } catch (SQLException ignore) {}
+                try { row.finishedAt = rs.getString("finished_at"); } catch (SQLException ignore) {}
+                list.add(row);
+            }
+        } catch (SQLException e) {
+            logger.error("Lỗi getFinishedAwaitingPayment: {}", e.getMessage());
+        }
+        return list;
+    }
+
     // ─── HELPER ──────────────────────────────────────────────────────────────
 
     private AuctionRow mapRow(ResultSet rs) throws SQLException {
@@ -400,6 +498,7 @@ public class AuctionDAO {
         row.endTime      = rs.getString("end_time");
         row.currentPrice = rs.getDouble("current_price");
         row.winnerId     = rs.getInt("winner_id");
+        try { row.finishedAt = rs.getString("finished_at"); } catch (SQLException ignore) {}
         return row;
     }
 
@@ -426,6 +525,7 @@ public class AuctionDAO {
         public double startingPrice;   // Giá khởi điểm gốc (JOIN từ items.starting_price)
         public int    winnerId;
         public String winnerName;      // fullname của winner hiện tại (JOIN với users)
+        public String finishedAt;      // thời điểm phiên kết thúc (cho timeout 12h)
     }
 
     /**

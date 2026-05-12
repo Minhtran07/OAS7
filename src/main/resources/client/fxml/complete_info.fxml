@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.RadioButton?>
+<?import javafx.scene.control.TextArea?>
+<?import javafx.scene.control.TextField?>
+<?import javafx.scene.control.ToggleGroup?>
+<?import javafx.scene.layout.BorderPane?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.Region?>
+<?import javafx.scene.layout.VBox?>
+
+<BorderPane prefHeight="600.0" prefWidth="520.0"
+            style="-fx-background-color: white;"
+            xmlns="http://javafx.com/javafx/21"
+            xmlns:fx="http://javafx.com/fxml/1"
+            fx:controller="com.auction.client.controller.ControllerCompleteInfo">
+
+    <top>
+        <HBox alignment="CENTER_LEFT" spacing="10"
+              style="-fx-background-color: #1a1a2e; -fx-padding: 14 18;">
+            <Label text="✍  Hoàn thiện thông tin nhận hàng"
+                   style="-fx-text-fill: white; -fx-font-size: 15px; -fx-font-weight: bold;" />
+            <Region HBox.hgrow="ALWAYS" />
+            <Button text="✕" onAction="#handleClose"
+                    style="-fx-background-color: #e94560; -fx-text-fill: white;
+                           -fx-font-size: 12px; -fx-font-weight: bold; -fx-cursor: hand;
+                           -fx-background-radius: 6; -fx-padding: 6 10;" />
+        </HBox>
+    </top>
+
+    <center>
+        <VBox spacing="12" style="-fx-padding: 18 22;">
+            <Label fx:id="headerLabel" text="Phiên: ..."
+                   style="-fx-font-size: 12px; -fx-text-fill: #6c757d;" />
+
+            <VBox spacing="4">
+                <Label text="Họ và tên" style="-fx-font-size: 12px; -fx-font-weight: bold;" />
+                <TextField fx:id="fullNameField" promptText="VD: Nguyễn Văn A" />
+            </VBox>
+
+            <VBox spacing="4">
+                <Label text="Số điện thoại" style="-fx-font-size: 12px; -fx-font-weight: bold;" />
+                <TextField fx:id="phoneField" promptText="VD: 0987654321" />
+            </VBox>
+
+            <VBox spacing="4">
+                <Label text="Địa chỉ nhận hàng" style="-fx-font-size: 12px; -fx-font-weight: bold;" />
+                <TextArea fx:id="addressField" prefRowCount="2"
+                          promptText="Số nhà, đường, phường, quận, thành phố" />
+            </VBox>
+
+            <VBox spacing="6">
+                <Label text="Phương thức thanh toán" style="-fx-font-size: 12px; -fx-font-weight: bold;" />
+                <HBox spacing="14">
+                    <fx:define>
+                        <ToggleGroup fx:id="paymentGroup" />
+                    </fx:define>
+                    <RadioButton fx:id="codRadio" text="COD (Thanh toán khi nhận hàng)"
+                                 toggleGroup="$paymentGroup" selected="true" />
+                    <RadioButton fx:id="bankRadio" text="Chuyển khoản ngân hàng"
+                                 toggleGroup="$paymentGroup" />
+                </HBox>
+            </VBox>
+
+            <VBox fx:id="bankBox" spacing="4" visible="false" managed="false">
+                <Label text="Số tài khoản ngân hàng" style="-fx-font-size: 12px; -fx-font-weight: bold;" />
+                <TextField fx:id="bankAccountField" promptText="Số tài khoản" />
+            </VBox>
+
+            <Label fx:id="messageLabel" text=""
+                   style="-fx-font-size: 12px;" wrapText="true" />
+
+            <Region prefHeight="6" />
+            <HBox spacing="10">
+                <Region HBox.hgrow="ALWAYS" />
+                <Button text="Hủy" onAction="#handleClose"
+                        style="-fx-background-color: #adb5bd; -fx-text-fill: white;
+                               -fx-font-size: 12px; -fx-font-weight: bold; -fx-cursor: hand;
+                               -fx-background-radius: 6; -fx-padding: 9 18;" />
+                <Button fx:id="submitButton" text="✅  Gửi thông tin" onAction="#handleSubmit"
+                        style="-fx-background-color: #16a34a; -fx-text-fill: white;
+                               -fx-font-size: 13px; -fx-font-weight: bold; -fx-cursor: hand;
+                               -fx-background-radius: 6; -fx-padding: 9 22;" />
+            </HBox>
+        </VBox>
+    </center>
+</BorderPane>

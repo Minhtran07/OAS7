@@ -1,11 +1,14 @@
 package com.auction.server.core;
 //luồng riêng cho 1 client để yêu cầu và nhận phản hồi
 import com.auction.server.dao.AuctionDAO;
+import com.auction.server.dao.BidderInfoDAO;
 import com.auction.server.dao.ItemDAO;
+import com.auction.server.dao.NotificationDAO;
 import com.auction.server.dao.UserDAO;
 import com.auction.server.model.AuctionManager;
 import com.auction.shared.model.auction.Auction;
 import com.auction.shared.model.item.Item;
+import com.auction.shared.model.notification.Notification;
 import com.auction.shared.model.user.Bidder;
 import com.auction.shared.model.user.Seller;
 import com.auction.shared.model.user.User;
@@ -24,6 +27,7 @@ import java.io.PrintWriter;
 import java.math.BigDecimal;
 import java.net.Socket;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 public class ClientHandler implements Runnable { // implements Runnable để biến class thành thread
@@ -34,12 +38,17 @@ public class ClientHandler implements Runnable { // implements Runnable để bi
     private PrintWriter out; // gửi data
     private BufferedReader in; // nhận data
 
-    private final UserDAO    userDAO;
-    private final AuctionDAO auctionDAO;
-    private final ItemDAO    itemDAO;
+    private final UserDAO         userDAO;
+    private final AuctionDAO      auctionDAO;
+    private final ItemDAO         itemDAO;
+    private final NotificationDAO notificationDAO;
+    private final BidderInfoDAO   bidderInfoDAO;
 
     // Theo dõi các auction mà client này đang subscribe (để unsubscribe khi disconnect)
     private final Set<Integer> subscribedAuctions = new HashSet<>();
+
+    // userId của client này — set sau khi LOGIN OK, dùng để unregister NotificationHub
+    private volatile int authenticatedUserId = -1;
 
     public ClientHandler(Socket socket) {
         this.socket = socket;
@@ -47,6 +56,8 @@ public class ClientHandler implements Runnable { // implements Runnable để bi
         this.userDAO = new UserDAO();
         this.auctionDAO = new AuctionDAO();
         this.itemDAO = new ItemDAO();
+        this.notificationDAO = new NotificationDAO();
+        this.bidderInfoDAO = new BidderInfoDAO();
     }
 
     @Override
@@ -105,6 +116,30 @@ public class ClientHandler implements Runnable { // implements Runnable để bi
                     case "DELETE_ITEM":
                         response = handleDeleteItem(request.getPayload());
                         break;
+                    case "GET_NOTIFICATIONS":
+                        response = handleGetNotifications(request.getPayload());
+                        break;
+                    case "MARK_NOTIFICATION_READ":
+                        response = handleMarkNotificationRead(request.getPayload());
+                        break;
+                    case "MARK_ALL_NOTIFICATIONS_READ":
+                        response = handleMarkAllNotificationsRead(request.getPayload());
+                        break;
+                    case "GET_UNREAD_COUNT":
+                        response = handleGetUnreadCount(request.getPayload());
+                        break;
+                    case "COMPLETE_AUCTION_INFO":
+                        response = handleCompleteAuctionInfo(request.getPayload());
+                        break;
+                    case "GET_AUCTION_INFO_STATUS":
+                        response = handleGetAuctionInfoStatus(request.getPayload());
+                        break;
+                    case "CANCEL_AUCTION":
+                        response = handleCancelAuction(request.getPayload());
+                        break;
+                    case "GET_CANCELED_AUCTIONS_FOR_SELLER":
+                        response = handleGetCanceledAuctionsForSeller(request.getPayload());
+                        break;
                     default:
                         response = new Response("ERROR", "Hệ thống không hiểu lệnh: " + request.getAction(), null);
                         break;
@@ -135,6 +170,12 @@ public class ClientHandler implements Runnable { // implements Runnable để bi
             User loggedInUser = userDAO.login(username, password);
 
             if (loggedInUser != null) {
+                // Đăng ký client này vào NotificationHub để nhận push thông báo realtime
+                authenticatedUserId = loggedInUser.getId();
+                NotificationHub.getInstance().register(authenticatedUserId, out);
+                // Tạo thông báo "đăng nhập thành công" — lưu DB + push (nếu client đã subscribe)
+                NotificationHub.getInstance().notifyLoginSuccess(loggedInUser);
+
                 String userJson = gson.toJson(loggedInUser);
                 return new Response("SUCCESS", "Đăng nhập thành công!", userJson);
             } else {
@@ -205,6 +246,10 @@ public class ClientHandler implements Runnable { // implements Runnable để bi
             }
             Bidder bidder = (Bidder) user;
 
+            // Lấy winner cũ trước khi bid để biết ai bị vượt
+            AuctionManager.Snapshot prevSnap = AuctionManager.getInstance().snapshot(auctionId);
+            int prevWinnerId = (prevSnap != null) ? prevSnap.winnerId : 0;
+
             // Gọi AuctionManager — ATOMIC: update RAM + ghi DB trong cùng 1 lock.
             // Không cần ghi DB ở đây nữa (tránh race khi lock đã unlock mà DB chưa ghi).
             boolean success = AuctionManager.getInstance()
@@ -212,6 +257,14 @@ public class ClientHandler implements Runnable { // implements Runnable để bi
 
             if (success) {
                 logger.info("Bid thành công: auctionId={}, bidderId={}, amount={}", auctionId, bidderId, amount);
+
+                // Thông báo cho bidder cũ vừa bị vượt giá
+                if (prevWinnerId > 0 && prevWinnerId != bidderId) {
+                    AuctionDAO.AuctionRow row = auctionDAO.getAuctionById(auctionId);
+                    String itemName = (row != null && row.itemName != null) ? row.itemName : "phiên #" + auctionId;
+                    NotificationHub.getInstance().notifyOutbid(
+                            prevWinnerId, itemName, auctionId, bidder.getFullname(), amount);
+                }
 
                 JsonObject responseData = new JsonObject();
                 responseData.addProperty("auctionId", auctionId);
@@ -252,12 +305,14 @@ public class ClientHandler implements Runnable { // implements Runnable để bi
             java.util.List<AuctionDAO.AuctionRow> auctions;
             switch (filter) {
                 case "FINISHED":
+                    // Bao gồm cả PAID (đã hoàn thiện) và CANCELED (đã hủy) — đều thuộc nhóm "kết thúc"
                     auctions = auctionDAO.getAuctionsByStatuses(
-                            java.util.Arrays.asList("FINISHED", "CLOSED"));
+                            java.util.Arrays.asList("FINISHED", "CLOSED", "PAID", "CANCELED"));
                     break;
                 case "ALL":
                     auctions = auctionDAO.getAuctionsByStatuses(
-                            java.util.Arrays.asList("OPEN", "RUNNING", "FINISHED", "CLOSED"));
+                            java.util.Arrays.asList(
+                                    "OPEN", "RUNNING", "FINISHED", "CLOSED", "PAID", "CANCELED"));
                     break;
                 case "RUNNING":
                 default:
@@ -309,6 +364,18 @@ public class ClientHandler implements Runnable { // implements Runnable để bi
                     auction.setCurrentPrice(java.math.BigDecimal.valueOf(startingPrice));
                     AuctionManager.getInstance().addAuction(auctionId, auction);
                     logger.info("Đã thêm phiên #{} vào AuctionManager", auctionId);
+
+                    // Thông báo cho seller: sản phẩm đã được đưa lên đấu giá
+                    NotificationHub.getInstance().notifyItemListed(
+                            item.getSellerID(), item.getName(), auctionId, itemId);
+
+                    // Thông báo cho các bidder cũ (nếu item này từng được đấu giá trước đó
+                    // — trường hợp re-list sau khi CANCELED): "sản phẩm X đã được mở đấu giá lại"
+                    List<Integer> oldBidders = auctionDAO.getBidderIdsForItem(itemId);
+                    for (int bid : oldBidders) {
+                        if (bid == item.getSellerID()) continue;
+                        NotificationHub.getInstance().notifyAuctionRelisted(bid, item.getName(), auctionId);
+                    }
                 }
                 JsonObject result = new JsonObject();
                 result.addProperty("auctionId", auctionId);
@@ -574,6 +641,7 @@ public class ClientHandler implements Runnable { // implements Runnable để bi
             // Hủy toàn bộ subscription của client này khi disconnect
             if (out != null) {
                 BidEventBus.getInstance().unsubscribeAll(out);
+                NotificationHub.getInstance().unregister(out);
             }
             if (in != null) in.close();
             if (out != null) out.close();
@@ -581,6 +649,236 @@ public class ClientHandler implements Runnable { // implements Runnable để bi
             logger.info("Đã dọn dẹp luồng kết nối.");
         } catch (IOException e) {
             logger.error("Lỗi khi đóng kết nối", e);
+        }
+    }
+
+    // ─── Notification handlers ───────────────────────────────────────────────
+
+    private Response handleGetNotifications(String payload) {
+        try {
+            JsonObject data = gson.fromJson(payload, JsonObject.class);
+            int userId = data.get("userId").getAsInt();
+            int limit  = data.has("limit") ? data.get("limit").getAsInt() : 100;
+
+            List<Notification> list = notificationDAO.listByUser(userId, limit);
+            int unread = notificationDAO.unreadCount(userId);
+
+            JsonObject result = new JsonObject();
+            result.add("notifications", gson.toJsonTree(list));
+            result.addProperty("unreadCount", unread);
+            return new Response("SUCCESS", "OK", result.toString());
+        } catch (Exception e) {
+            logger.error("Lỗi GET_NOTIFICATIONS", e);
+            return new Response("ERROR", "Không thể lấy danh sách thông báo", null);
+        }
+    }
+
+    private Response handleMarkNotificationRead(String payload) {
+        try {
+            JsonObject data = gson.fromJson(payload, JsonObject.class);
+            int notifId = data.get("notifId").getAsInt();
+            int userId  = data.get("userId").getAsInt();
+            boolean ok = notificationDAO.markRead(notifId, userId);
+            JsonObject result = new JsonObject();
+            result.addProperty("unreadCount", notificationDAO.unreadCount(userId));
+            return ok
+                ? new Response("SUCCESS", "OK", result.toString())
+                : new Response("FAIL", "Không tìm thấy thông báo", result.toString());
+        } catch (Exception e) {
+            logger.error("Lỗi MARK_NOTIFICATION_READ", e);
+            return new Response("ERROR", "Dữ liệu không hợp lệ", null);
+        }
+    }
+
+    private Response handleMarkAllNotificationsRead(String payload) {
+        try {
+            JsonObject data = gson.fromJson(payload, JsonObject.class);
+            int userId = data.get("userId").getAsInt();
+            int count = notificationDAO.markAllRead(userId);
+            JsonObject result = new JsonObject();
+            result.addProperty("marked", count);
+            result.addProperty("unreadCount", 0);
+            return new Response("SUCCESS", "OK", result.toString());
+        } catch (Exception e) {
+            logger.error("Lỗi MARK_ALL_NOTIFICATIONS_READ", e);
+            return new Response("ERROR", "Dữ liệu không hợp lệ", null);
+        }
+    }
+
+    private Response handleGetUnreadCount(String payload) {
+        try {
+            JsonObject data = gson.fromJson(payload, JsonObject.class);
+            int userId = data.get("userId").getAsInt();
+            JsonObject result = new JsonObject();
+            result.addProperty("unreadCount", notificationDAO.unreadCount(userId));
+            return new Response("SUCCESS", "OK", result.toString());
+        } catch (Exception e) {
+            logger.error("Lỗi GET_UNREAD_COUNT", e);
+            return new Response("ERROR", "Dữ liệu không hợp lệ", null);
+        }
+    }
+
+    // ─── Auction lifecycle handlers (PAID / CANCELED) ────────────────────────
+
+    /**
+     * Người thắng phiên đệ trình thông tin hoàn thiện trước hạn 12h.
+     * Payload: { auctionId, bidderId, fullName, phone, address, paymentMethod, bankAccount? }
+     * Server: lưu bidder_info + auction.status = PAID + notify seller.
+     */
+    private Response handleCompleteAuctionInfo(String payload) {
+        try {
+            JsonObject data = gson.fromJson(payload, JsonObject.class);
+            int auctionId = data.get("auctionId").getAsInt();
+            int bidderId  = data.get("bidderId").getAsInt();
+
+            AuctionDAO.AuctionRow row = auctionDAO.getAuctionById(auctionId);
+            if (row == null) return new Response("FAIL", "Phiên không tồn tại", null);
+            if (!"FINISHED".equalsIgnoreCase(row.status)) {
+                return new Response("FAIL", "Phiên không ở trạng thái cần hoàn thiện (status=" + row.status + ")", null);
+            }
+            if (row.winnerId != bidderId) {
+                return new Response("FAIL", "Bạn không phải người thắng phiên này", null);
+            }
+
+            BidderInfoDAO.BidderInfo info = new BidderInfoDAO.BidderInfo();
+            info.auctionId     = auctionId;
+            info.bidderId      = bidderId;
+            info.fullName      = getStringOr(data, "fullName", "");
+            info.phone         = getStringOr(data, "phone", "");
+            info.address       = getStringOr(data, "address", "");
+            info.paymentMethod = getStringOr(data, "paymentMethod", "COD");
+            info.bankAccount   = getStringOr(data, "bankAccount", "");
+
+            if (!bidderInfoDAO.upsert(info)) {
+                return new Response("ERROR", "Không thể lưu thông tin hoàn thiện", null);
+            }
+            // Chuyển auction sang PAID
+            auctionDAO.updateStatus(auctionId, "PAID");
+            // Cập nhật item status: SOLD (giữ nguyên — đã set khi FINISHED)
+            // Notify seller
+            int sellerId = auctionDAO.getSellerIdForAuction(auctionId);
+            String itemName = row.itemName != null ? row.itemName : "phiên #" + auctionId;
+            if (sellerId > 0) {
+                NotificationHub.getInstance().notifyAuctionPaidToSeller(sellerId, itemName, auctionId);
+            }
+
+            JsonObject result = new JsonObject();
+            result.addProperty("auctionId", auctionId);
+            result.addProperty("status", "PAID");
+            return new Response("SUCCESS", "Đã hoàn thiện thông tin thành công!", result.toString());
+        } catch (Exception e) {
+            logger.error("Lỗi COMPLETE_AUCTION_INFO", e);
+            return new Response("ERROR", "Dữ liệu không hợp lệ", null);
+        }
+    }
+
+    private static String getStringOr(JsonObject obj, String key, String def) {
+        return (obj.has(key) && !obj.get(key).isJsonNull()) ? obj.get(key).getAsString() : def;
+    }
+
+    /**
+     * Trả về trạng thái auction (+ bidder_info nếu đã hoàn thiện) cho client.
+     * Payload: { auctionId, userId }
+     */
+    private Response handleGetAuctionInfoStatus(String payload) {
+        try {
+            JsonObject data = gson.fromJson(payload, JsonObject.class);
+            int auctionId = data.get("auctionId").getAsInt();
+
+            AuctionDAO.AuctionRow row = auctionDAO.getAuctionById(auctionId);
+            if (row == null) return new Response("FAIL", "Phiên không tồn tại", null);
+
+            BidderInfoDAO.BidderInfo info = bidderInfoDAO.findByAuction(auctionId);
+
+            JsonObject result = new JsonObject();
+            result.addProperty("auctionId",    auctionId);
+            result.addProperty("status",       row.status);
+            result.addProperty("winnerId",     row.winnerId);
+            result.addProperty("finishedAt",   row.finishedAt);
+            result.addProperty("currentPrice", row.currentPrice);
+            if (info != null) {
+                JsonObject infoObj = gson.toJsonTree(info).getAsJsonObject();
+                result.add("bidderInfo", infoObj);
+            }
+            return new Response("SUCCESS", "OK", result.toString());
+        } catch (Exception e) {
+            logger.error("Lỗi GET_AUCTION_INFO_STATUS", e);
+            return new Response("ERROR", "Dữ liệu không hợp lệ", null);
+        }
+    }
+
+    /**
+     * Seller chủ động hủy phiên CANCELED + (tùy chọn) xoá item.
+     * Payload: { auctionId, sellerId, deleteItem: bool }
+     *  - Set auction.status = CANCELED (nếu chưa)
+     *  - Nếu deleteItem=true: item.status = CLOSED (hoặc xóa nếu không có ràng buộc khác)
+     *  - Nếu deleteItem=false: item.status = OPEN — sẵn sàng cho seller tạo phiên mới
+     */
+    private Response handleCancelAuction(String payload) {
+        try {
+            JsonObject data = gson.fromJson(payload, JsonObject.class);
+            int auctionId   = data.get("auctionId").getAsInt();
+            int sellerId    = data.get("sellerId").getAsInt();
+            boolean deleteItem = data.has("deleteItem") && data.get("deleteItem").getAsBoolean();
+
+            AuctionDAO.AuctionRow row = auctionDAO.getAuctionById(auctionId);
+            if (row == null) return new Response("FAIL", "Phiên không tồn tại", null);
+
+            int actualSeller = auctionDAO.getSellerIdForAuction(auctionId);
+            if (actualSeller != sellerId) {
+                return new Response("FAIL", "Bạn không phải seller của phiên này", null);
+            }
+
+            // Set CANCELED (idempotent — nếu đã CANCELED rồi vẫn OK)
+            if (!"CANCELED".equalsIgnoreCase(row.status)) {
+                auctionDAO.updateStatus(auctionId, "CANCELED");
+            }
+
+            // Xử lý item
+            if (deleteItem) {
+                // Đánh dấu item CLOSED — seller dashboard sẽ không show trong tab tạo phiên
+                itemDAO.updateStatus(row.itemId, "CLOSED");
+            } else {
+                // Trả item về OPEN — sẵn sàng cho phiên mới
+                itemDAO.updateStatus(row.itemId, "OPEN");
+            }
+
+            JsonObject result = new JsonObject();
+            result.addProperty("auctionId", auctionId);
+            result.addProperty("itemId", row.itemId);
+            result.addProperty("deletedItem", deleteItem);
+            return new Response("SUCCESS", "Đã hủy phiên đấu giá", result.toString());
+        } catch (Exception e) {
+            logger.error("Lỗi CANCEL_AUCTION", e);
+            return new Response("ERROR", "Dữ liệu không hợp lệ", null);
+        }
+    }
+
+    /**
+     * Trả về các phiên CANCELED của seller — để Seller Dashboard hiển thị tab/danh sách cần xử lý.
+     * Payload: { sellerId }
+     */
+    private Response handleGetCanceledAuctionsForSeller(String payload) {
+        try {
+            JsonObject data = gson.fromJson(payload, JsonObject.class);
+            int sellerId = data.get("sellerId").getAsInt();
+
+            List<AuctionDAO.AuctionRow> all = auctionDAO.getAuctionsByStatuses(
+                    java.util.Arrays.asList("CANCELED"));
+            // Lọc theo seller (qua item.seller_id)
+            JsonArray arr = new JsonArray();
+            for (AuctionDAO.AuctionRow r : all) {
+                int s = auctionDAO.getSellerIdForAuction(r.id);
+                if (s == sellerId) {
+                    arr.add(gson.toJsonTree(r));
+                }
+            }
+            JsonObject result = new JsonObject();
+            result.add("auctions", arr);
+            return new Response("SUCCESS", "OK", result.toString());
+        } catch (Exception e) {
+            logger.error("Lỗi GET_CANCELED_AUCTIONS_FOR_SELLER", e);
+            return new Response("ERROR", "Dữ liệu không hợp lệ", null);
         }
     }
 }

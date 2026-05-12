@@ -19,10 +19,16 @@
             <Region HBox.hgrow="ALWAYS" />
             <Label fx:id="welcomeLabel" text=""
                    style="-fx-text-fill: #adb5bd; -fx-font-size: 13px;" />
+            <Button fx:id="canceledAuctionsButton" text="⚠ Phiên cần xử lý"
+                    onAction="#handleOpenCanceledAuctions"
+                    style="-fx-background-color: #f59e0b; -fx-text-fill: white;
+                           -fx-font-size: 12px; -fx-cursor: hand; -fx-background-radius: 6; -fx-padding: 8 16;">
+                <HBox.margin><Insets left="20"/></HBox.margin>
+            </Button>
             <Button text="← Danh sách đấu giá" onAction="#handleBack"
                     style="-fx-background-color: #495057; -fx-text-fill: white;
                            -fx-font-size: 12px; -fx-cursor: hand; -fx-background-radius: 6; -fx-padding: 8 16;">
-                <HBox.margin><Insets left="20"/></HBox.margin>
+                <HBox.margin><Insets left="10"/></HBox.margin>
             </Button>
             <Button text="⏻ Đăng xuất" onAction="#handleLogout"
                     style="-fx-background-color: #e94560; -fx-text-fill: white;

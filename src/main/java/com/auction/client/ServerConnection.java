@@ -89,8 +89,10 @@ public class ServerConnection {
     // Hàng đợi cho các reply từ server (mỗi sendRequest lấy 1)
     private final LinkedBlockingQueue<String> responseQueue = new LinkedBlockingQueue<>();
 
-    // Listener nhận push event
+    // Listener nhận push event (bid/auction lifecycle) — gắn theo màn hình
     private PushListener    pushListener;
+    // Listener nhận PUSH:NOTIFICATION:... — gắn cố định sau LOGIN cho toàn app
+    private NotificationListener notificationListener;
     private Thread          listenerThread;
     private volatile boolean running = false;
 
@@ -198,6 +200,11 @@ public class ServerConnection {
         void onPushEvent(String eventJson);
     }
 
+    /** Callback cho push notification (PUSH:NOTIFICATION:{json}). */
+    public interface NotificationListener {
+        void onNotification(String eventJson);
+    }
+
     public void setPushListener(PushListener listener) {
         this.pushListener = listener;
     }
@@ -206,13 +213,29 @@ public class ServerConnection {
         this.pushListener = null;
     }
 
+    public void setNotificationListener(NotificationListener listener) {
+        this.notificationListener = listener;
+    }
+
+    public void clearNotificationListener() {
+        this.notificationListener = null;
+    }
+
     private void startListenerThread() {
         running = true;
         listenerThread = new Thread(() -> {
             try {
                 String line;
                 while (running && (line = in.readLine()) != null) {
-                    if (line.startsWith("PUSH:")) {
+                    if (line.startsWith("PUSH:NOTIFICATION:")) {
+                        // Push thông báo riêng — gửi cho NotificationListener của toàn app
+                        String notifJson = line.substring("PUSH:NOTIFICATION:".length());
+                        if (notificationListener != null) {
+                            javafx.application.Platform.runLater(
+                                () -> notificationListener.onNotification(notifJson)
+                            );
+                        }
+                    } else if (line.startsWith("PUSH:")) {
                         String eventJson = line.substring(5);
                         if (pushListener != null) {
                             javafx.application.Platform.runLater(

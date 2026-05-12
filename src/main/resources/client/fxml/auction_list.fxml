@@ -62,10 +62,21 @@
                                prefWidth="280"
                                style="-fx-background-color: rgba(255,255,255,0.95); -fx-text-fill: #1a1a2e;
                                       -fx-font-size: 13px; -fx-padding: 10 14; -fx-background-radius: 8;" />
-                    <Button fx:id="cartButton" text="🛒  Giỏ đấu giá" onAction="#handleOpenCart"
-                            style="-fx-background-color: #f59e0b; -fx-text-fill: white;
-                                   -fx-font-size: 13px; -fx-font-weight: bold; -fx-cursor: hand;
-                                   -fx-background-radius: 8; -fx-padding: 10 18;" />
+                    <!-- Notification bell — thay cho 'Giỏ đấu giá' MyCart cũ.
+                         Badge số hiển thị unread count, click mở danh sách thông báo. -->
+                    <StackPane fx:id="bellContainer" onMouseClicked="#handleOpenNotifications"
+                               style="-fx-cursor: hand;">
+                        <Button fx:id="bellButton" text="🔔" onAction="#handleOpenNotifications"
+                                style="-fx-background-color: #f59e0b; -fx-text-fill: white;
+                                       -fx-font-size: 16px; -fx-font-weight: bold; -fx-cursor: hand;
+                                       -fx-background-radius: 8; -fx-padding: 8 14;" />
+                        <Label fx:id="bellBadgeLabel" text=""
+                               style="-fx-background-color: #dc2626; -fx-text-fill: white;
+                                      -fx-font-size: 10px; -fx-font-weight: bold;
+                                      -fx-padding: 2 6; -fx-background-radius: 10;
+                                      -fx-translate-x: 14; -fx-translate-y: -10;"
+                               visible="false" managed="false" />
+                    </StackPane>
                     <Button text="🔄  Làm mới" onAction="#handleRefresh"
                             style="-fx-background-color: #e94560; -fx-text-fill: white;
                                    -fx-font-size: 13px; -fx-font-weight: bold; -fx-cursor: hand;

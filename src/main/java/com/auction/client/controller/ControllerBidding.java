@@ -62,6 +62,11 @@ public class ControllerBidding implements ServerConnection.PushListener {
     @FXML private VBox autoBidBox;
     @FXML private HBox viewOnlyBadgeBox;
 
+    // Khu hoàn thiện thông tin — hiện khi FINISHED + current user là winner
+    @FXML private VBox    completionBox;
+    @FXML private Label   completionDeadlineLabel;
+    @FXML private javafx.scene.control.Button completeInfoButton;
+
     // Chart
     @FXML private LineChart<String, Number> priceChart;
     @FXML private CategoryAxis              xAxis;
@@ -325,6 +330,8 @@ public class ControllerBidding implements ServerConnection.PushListener {
                     // Đổi màu stats label thành đỏ
                     chartStatsLabel.setStyle(
                             "-fx-text-fill: #c0392b; -fx-font-size: 11px; -fx-font-weight: bold;");
+                    // Cập nhật khu Hoàn thiện thông tin nếu current user là winner
+                    refreshCompletionBox(event.winnerId, "FINISHED", null);
                     break;
             }
         } catch (Exception e) {
@@ -460,6 +467,89 @@ public class ControllerBidding implements ServerConnection.PushListener {
 
         // Đánh dấu history đã load — từ giờ push BID_UPDATE sẽ đẩy điểm vào chart.
         historyLoaded = true;
+
+        // Sau khi snapshot về: nếu auction đã FINISHED và user là winner → hiện khối hoàn thiện
+        new Thread(this::loadAuctionInfoStatusForCompletion).start();
+    }
+
+    /**
+     * Hỏi server trạng thái hiện tại + bidder_info (nếu có) để quyết định
+     * hiển thị khu "Hoàn thiện thông tin" hay không.
+     */
+    private void loadAuctionInfoStatusForCompletion() {
+        JsonObject p = new JsonObject();
+        p.addProperty("auctionId", auctionId);
+        int userId = UserSession.getInstance().isLoggedIn()
+                ? UserSession.getInstance().getCurrentUser().getId() : 0;
+        p.addProperty("userId", userId);
+        Response r = ServerConnection.getInstance()
+                .sendRequest("GET_AUCTION_INFO_STATUS", p.toString());
+        if (!"SUCCESS".equals(r.getStatus()) || r.getPayload() == null) return;
+        try {
+            JsonObject obj = gson.fromJson(r.getPayload(), JsonObject.class);
+            String status = obj.has("status") ? obj.get("status").getAsString() : null;
+            int winnerId  = obj.has("winnerId") ? obj.get("winnerId").getAsInt() : 0;
+            final String finishedAt = (obj.has("finishedAt") && !obj.get("finishedAt").isJsonNull())
+                    ? obj.get("finishedAt").getAsString() : null;
+            Platform.runLater(() -> refreshCompletionBox(winnerId, status, finishedAt));
+        } catch (Exception ignore) {}
+    }
+
+    /**
+     * Cập nhật khu Hoàn thiện thông tin trên UI.
+     * Hiện khi: status == FINISHED hoặc PAID, và winnerId == current user id.
+     */
+    private void refreshCompletionBox(int winnerId, String status, String finishedAt) {
+        if (completionBox == null) return;
+        if (!UserSession.getInstance().isLoggedIn()) return;
+        int myId = UserSession.getInstance().getCurrentUser().getId();
+        boolean iAmWinner = (winnerId > 0 && winnerId == myId);
+        boolean isFinished = "FINISHED".equalsIgnoreCase(status);
+        boolean isPaid     = "PAID".equalsIgnoreCase(status);
+        boolean isCanceled = "CANCELED".equalsIgnoreCase(status);
+        boolean show = iAmWinner && (isFinished || isPaid);
+
+        // Khi phiên đã CANCELED hoặc kết thúc → ẩn form đặt giá / auto-bid
+        if (isFinished || isPaid || isCanceled) {
+            setNodeVisible(placeBidBox, false);
+            setNodeVisible(autoBidBox, false);
+            if (bidButton != null) bidButton.setDisable(true);
+        }
+
+        completionBox.setVisible(show);
+        completionBox.setManaged(show);
+        if (!show) return;
+
+        if (isPaid) {
+            completionBox.setStyle("-fx-background-color: linear-gradient(to bottom right, #16a34a, #166534);"
+                    + " -fx-background-radius: 12; -fx-padding: 18 18;");
+            completionDeadlineLabel.setText("Bạn đã hoàn thiện thông tin. Có thể bấm để kiểm tra lại.");
+            completeInfoButton.setText("🔍 Kiểm tra thông tin");
+        } else {
+            completionBox.setStyle("-fx-background-color: linear-gradient(to bottom right, #dc2626, #991b1b);"
+                    + " -fx-background-radius: 12; -fx-padding: 18 18;");
+            // Hiển thị deadline = finished_at + COMPLETION_TIMEOUT_MINUTES (client tính tham khảo).
+            // Server có timeout job nên đây chỉ là gợi ý UX.
+            String dl = "Vui lòng hoàn thiện thông tin trong "
+                    + com.auction.shared.AppConfig.COMPLETION_TIMEOUT_MINUTES + " phút.";
+            completionDeadlineLabel.setText(dl);
+            completeInfoButton.setText("✍ Hoàn thiện thông tin");
+        }
+        // Ẩn các form đặt giá khi đang ở chế độ hoàn thiện
+        setNodeVisible(placeBidBox, false);
+        setNodeVisible(autoBidBox, false);
+    }
+
+    @FXML
+    private void handleOpenCompleteInfo(javafx.event.ActionEvent event) {
+        try {
+            ControllerCompleteInfo.openAsPopup(
+                    (Stage) ((Node) event.getSource()).getScene().getWindow(),
+                    auctionId, currentPrice,
+                    () -> new Thread(this::loadAuctionInfoStatusForCompletion).start());
+        } catch (Exception ex) {
+            showBidMessage("Không thể mở form hoàn thiện: " + ex.getMessage(), false);
+        }
     }
 
     /**

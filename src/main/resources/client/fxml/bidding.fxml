@@ -75,6 +75,24 @@
                            wrapText="true"/>
                 </HBox>
 
+                <!-- Khối Hoàn thiện thông tin — chỉ hiện khi phiên FINISHED + current user là winner -->
+                <VBox fx:id="completionBox" spacing="10"
+                      visible="false" managed="false"
+                      style="-fx-background-color: linear-gradient(to bottom right, #dc2626, #991b1b);
+                             -fx-background-radius: 12; -fx-padding: 18 18;
+                             -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.10), 10, 0, 0, 3);">
+                    <Label text="🏆 Bạn đã thắng phiên này!"
+                           style="-fx-font-size: 14px; -fx-font-weight: bold; -fx-text-fill: white;" />
+                    <Label fx:id="completionDeadlineLabel" text="Vui lòng hoàn thiện thông tin trong 12h."
+                           style="-fx-font-size: 11px; -fx-text-fill: #fde2e2;" wrapText="true" />
+                    <Button fx:id="completeInfoButton" text="✍ Hoàn thiện thông tin"
+                            onAction="#handleOpenCompleteInfo"
+                            prefHeight="40" maxWidth="Infinity"
+                            style="-fx-background-color: white; -fx-text-fill: #b91c1c;
+                                   -fx-font-size: 13px; -fx-font-weight: bold; -fx-cursor: hand;
+                                   -fx-background-radius: 8;" />
+                </VBox>
+
                 <!-- Đặt giá thủ công -->
                 <VBox fx:id="placeBidBox" spacing="12"
                       style="-fx-background-color: white; -fx-background-radius: 12;

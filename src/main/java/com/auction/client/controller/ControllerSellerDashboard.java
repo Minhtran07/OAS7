@@ -489,6 +489,174 @@ public class ControllerSellerDashboard {
         }).start();
     }
 
+    // ─── CANCELED auctions handling ──────────────────────────────────────────
+
+    @FXML
+    private void handleOpenCanceledAuctions(ActionEvent event) {
+        if (!UserSession.getInstance().isLoggedIn()) return;
+        int sellerId = UserSession.getInstance().getCurrentUser().getId();
+        JsonObject p = new JsonObject();
+        p.addProperty("sellerId", sellerId);
+
+        new Thread(() -> {
+            Response r = ServerConnection.getInstance()
+                    .sendRequest("GET_CANCELED_AUCTIONS_FOR_SELLER", p.toString());
+            Platform.runLater(() -> {
+                if (!"SUCCESS".equals(r.getStatus()) || r.getPayload() == null) {
+                    showAlert("Lỗi", r.getMessage(), Alert.AlertType.ERROR);
+                    return;
+                }
+                JsonObject obj = gson.fromJson(r.getPayload(), JsonObject.class);
+                JsonArray arr = obj.getAsJsonArray("auctions");
+                if (arr.size() == 0) {
+                    showAlert("Phiên cần xử lý",
+                            "Hiện không có phiên đấu giá nào bị hủy cần xử lý.",
+                            Alert.AlertType.INFORMATION);
+                    return;
+                }
+                showCanceledList(arr);
+            });
+        }).start();
+    }
+
+    private void showCanceledList(JsonArray arr) {
+        Stage owner = (Stage) (welcomeLabel != null ? welcomeLabel.getScene().getWindow() : null);
+        Stage popup = new Stage();
+        if (owner != null) {
+            popup.initOwner(owner);
+            popup.initModality(javafx.stage.Modality.WINDOW_MODAL);
+        }
+        popup.setTitle("Phiên đã bị hủy");
+
+        VBox container = new VBox(8);
+        container.setStyle("-fx-padding: 18; -fx-background-color: white;");
+        Label title = new Label("⚠ Các phiên đấu giá CANCELED");
+        title.setStyle("-fx-font-size: 15px; -fx-font-weight: bold;");
+        container.getChildren().add(title);
+        Label hint = new Label("Lý do: Người tham gia không hoàn thiện quy trình đấu giá. "
+                + "Chọn 'Mở đấu giá lại' để đưa sản phẩm lên sàn lần nữa, "
+                + "hoặc 'Xóa sản phẩm' để dừng hẳn.");
+        hint.setWrapText(true);
+        hint.setStyle("-fx-font-size: 11px; -fx-text-fill: #6c757d;");
+        container.getChildren().add(hint);
+
+        for (JsonElement el : arr) {
+            JsonObject o = el.getAsJsonObject();
+            int auctionId = o.get("id").getAsInt();
+            int itemId    = o.get("itemId").getAsInt();
+            String itemName = o.has("itemName") && !o.get("itemName").isJsonNull()
+                    ? o.get("itemName").getAsString() : ("#" + itemId);
+            double price = o.has("currentPrice") ? o.get("currentPrice").getAsDouble() : 0;
+
+            VBox row = new VBox(6);
+            row.setStyle("-fx-background-color: #fff7ed; -fx-padding: 12; -fx-background-radius: 8;"
+                    + " -fx-border-color: #fed7aa; -fx-border-radius: 8;");
+            Label name = new Label("📦 " + itemName + " — Phiên #" + auctionId
+                    + " — Giá cuối: " + String.format("%,.0f VNĐ", price));
+            name.setStyle("-fx-font-size: 12px; -fx-font-weight: bold; -fx-text-fill: #92400e;");
+            name.setWrapText(true);
+
+            Button btnRelist = new Button("🔄 Mở đấu giá lại sản phẩm");
+            btnRelist.setStyle("-fx-background-color: #2563eb; -fx-text-fill: white; "
+                    + "-fx-cursor: hand; -fx-background-radius: 6; -fx-padding: 6 12; -fx-font-size: 11px;");
+            btnRelist.setOnAction(ev -> handleRelist(auctionId, itemId, popup));
+
+            Button btnDelete = new Button("🗑 Xóa sản phẩm");
+            btnDelete.setStyle("-fx-background-color: #dc2626; -fx-text-fill: white; "
+                    + "-fx-cursor: hand; -fx-background-radius: 6; -fx-padding: 6 12; -fx-font-size: 11px;");
+            btnDelete.setOnAction(ev -> handleCancelDelete(auctionId, itemId, popup));
+
+            javafx.scene.layout.HBox actions = new javafx.scene.layout.HBox(8, btnRelist, btnDelete);
+            row.getChildren().addAll(name, actions);
+            container.getChildren().add(row);
+        }
+
+        javafx.scene.control.ScrollPane sp = new javafx.scene.control.ScrollPane(container);
+        sp.setFitToWidth(true);
+        popup.setScene(new javafx.scene.Scene(sp, 520, 480));
+        popup.show();
+    }
+
+    private void handleRelist(int auctionId, int itemId, Stage popup) {
+        // Trả item về OPEN + đóng popup + chuyển sang tab "Tạo phiên đấu giá"
+        int sellerId = UserSession.getInstance().getCurrentUser().getId();
+        JsonObject p = new JsonObject();
+        p.addProperty("auctionId", auctionId);
+        p.addProperty("sellerId", sellerId);
+        p.addProperty("deleteItem", false);
+        new Thread(() -> {
+            Response r = ServerConnection.getInstance()
+                    .sendRequest("CANCEL_AUCTION", p.toString());
+            Platform.runLater(() -> {
+                if ("SUCCESS".equals(r.getStatus())) {
+                    if (popup != null) popup.close();
+                    loadMyItems();
+                    // Chọn sản phẩm tương ứng trong tab tạo phiên + chuyển tab
+                    selectAuctionItem(itemId);
+                    showAlert("Đã chuẩn bị mở đấu giá lại",
+                            "Sản phẩm đã được trả về trạng thái sẵn sàng. "
+                            + "Vui lòng chuyển sang tab 'Tạo phiên đấu giá' và nhập thời gian.",
+                            Alert.AlertType.INFORMATION);
+                } else {
+                    showAlert("Lỗi", r.getMessage(), Alert.AlertType.ERROR);
+                }
+            });
+        }).start();
+    }
+
+    private void handleCancelDelete(int auctionId, int itemId, Stage popup) {
+        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
+        confirm.setTitle("Xác nhận xóa sản phẩm");
+        confirm.setHeaderText("Xóa sản phẩm khỏi danh sách");
+        confirm.setContentText("Hành động này sẽ đóng phiên đấu giá vĩnh viễn. Tiếp tục?");
+        confirm.showAndWait().ifPresent(btn -> {
+            if (btn != ButtonType.OK) return;
+            int sellerId = UserSession.getInstance().getCurrentUser().getId();
+            JsonObject p = new JsonObject();
+            p.addProperty("auctionId", auctionId);
+            p.addProperty("sellerId", sellerId);
+            p.addProperty("deleteItem", true);
+            new Thread(() -> {
+                Response r = ServerConnection.getInstance()
+                        .sendRequest("CANCEL_AUCTION", p.toString());
+                Platform.runLater(() -> {
+                    if ("SUCCESS".equals(r.getStatus())) {
+                        if (popup != null) popup.close();
+                        loadMyItems();
+                        showAlert("Đã xóa", "Sản phẩm đã được đóng.", Alert.AlertType.INFORMATION);
+                    } else {
+                        showAlert("Lỗi", r.getMessage(), Alert.AlertType.ERROR);
+                    }
+                });
+            }).start();
+        });
+    }
+
+    /** Tìm và chọn item trong tab "Tạo phiên đấu giá" theo itemId. */
+    private void selectAuctionItem(int itemId) {
+        if (auctionItemTable == null) return;
+        for (ItemRow r : auctionItemTable.getItems()) {
+            if (r.id == itemId) {
+                auctionItemTable.getSelectionModel().select(r);
+                auctionItemTable.scrollTo(r);
+                selectedAuctionItemId = itemId;
+                if (auctionItemNameLabel != null) {
+                    auctionItemNameLabel.setText(r.name + "  (ID: " + r.id
+                            + " — Giá khởi điểm: " + String.format("%,.0f VNĐ", r.startingPrice) + ")");
+                }
+                break;
+            }
+        }
+    }
+
+    private void showAlert(String title, String msg, Alert.AlertType type) {
+        Alert a = new Alert(type);
+        a.setTitle(title);
+        a.setHeaderText(null);
+        a.setContentText(msg);
+        a.showAndWait();
+    }
+
     // ─── Navigation ──────────────────────────────────────────────────────────
 
     @FXML

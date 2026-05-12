@@ -1,6 +1,7 @@
 package com.auction.server.model;
 
 import com.auction.server.core.BidEventBus;
+import com.auction.server.core.NotificationHub;
 import com.auction.server.dao.AuctionDAO;
 import com.auction.server.dao.ItemDAO;
 import com.auction.shared.model.auction.Auction;
@@ -286,6 +287,10 @@ public class AuctionManager {
 
         int lastBidderId = excludeBidderId;
 
+        // Trước khi vào vòng counter — kiểm tra các auto-bid đã hết khả năng counter
+        // mà không phải đang là winner → thông báo "đã đạt max" (1 lần duy nhất).
+        notifyAutoBidMaxReached(auctionId, auction, queue);
+
         for (int round = 0; round < AUTO_BID_MAX_ROUNDS; round++) {
             // Tìm auto-bid tốt nhất có thể counter (không phải người vừa thắng vòng trước)
             AutoBidEntry best = null;
@@ -304,6 +309,7 @@ public class AuctionManager {
                     logger.info("Auto-bid war phiên #{} kết thúc sau {} vòng, giá cuối: {}",
                             auctionId, round, auction.getCurrentPrice());
                 }
+                notifyAutoBidMaxReached(auctionId, auction, queue);
                 return;
             }
 
@@ -380,6 +386,32 @@ public class AuctionManager {
         }
     }
 
+    /**
+     * Duyệt queue auto-bid, với mỗi entry KHÔNG phải winner hiện tại và
+     * currentPrice + increment > maxBid → đánh dấu maxReached, gửi notification 1 lần.
+     */
+    private void notifyAutoBidMaxReached(int auctionId, Auction auction,
+                                          PriorityQueue<AutoBidEntry> queue) {
+        if (queue == null || queue.isEmpty()) return;
+        int winnerId = auction.getHighestBidderId();
+        String itemName = (auction.getItem() != null) ? auction.getItem().getName() : "phiên #" + auctionId;
+        for (AutoBidEntry e : queue) {
+            if (e.maxReachedNotified) continue;
+            if (e.bidderId == winnerId) continue; // winner — đang dẫn đầu, chưa hết max
+            BigDecimal nextBid = auction.getCurrentPrice().add(e.increment);
+            if (nextBid.compareTo(e.maxBid) > 0) {
+                e.maxReachedNotified = true;
+                try {
+                    NotificationHub.getInstance().notifyAutoBidMax(
+                            e.bidderId, itemName, auctionId, e.maxBid.doubleValue());
+                } catch (Throwable t) {
+                    logger.warn("Không thể gửi notification auto-bid max cho bidder {}: {}",
+                            e.bidderId, t.getMessage());
+                }
+            }
+        }
+    }
+
     // ─── Snapshot DTO ─────────────────────────────────────────────────────────
 
     public static class Snapshot {
@@ -398,6 +430,8 @@ public class AuctionManager {
         final BigDecimal maxBid;
         final BigDecimal increment;
         final LocalDateTime registeredAt;
+        /** Đã gửi notification "auto-bid đạt max" cho bidder này chưa (1 lần duy nhất). */
+        boolean maxReachedNotified = false;
 
         AutoBidEntry(Bidder bidder, BigDecimal maxBid, BigDecimal increment,
                      LocalDateTime registeredAt) {

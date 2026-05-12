@@ -94,10 +94,89 @@ public class DatabaseConnection {
                 logger.info("Schema DB đã được khởi tạo thành công.");
             }
 
+            // Sau khi schema base đã có → chạy migration v2 (PAID/CANCELED).
+            migrateAuctionsTableForV2();
+
         } catch (IOException e) {
             logger.error("Lỗi đọc schema.sql: {}", e.getMessage());
         } catch (SQLException e) {
             logger.error("Lỗi thực thi schema SQL: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Migration v2: bảng `auctions` của bản cũ có CHECK constraint chặn
+     * 'PAID' và 'CANCELED'. SQLite không cho ALTER CHECK, nên ta:
+     *   1. Đọc DDL hiện tại từ sqlite_master.
+     *   2. Nếu DDL chứa CHECK với danh sách trạng thái cũ → recreate table:
+     *      tạo auctions_new (không CHECK, có finished_at), copy dữ liệu, drop, rename.
+     *   3. Ngoài ra đảm bảo cột finished_at có mặt (ALTER TABLE ADD COLUMN nếu thiếu).
+     */
+    private void migrateAuctionsTableForV2() {
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement()) {
+
+            // Đọc DDL của bảng auctions hiện hữu
+            String existingDdl = null;
+            try (var rs = stmt.executeQuery(
+                    "SELECT sql FROM sqlite_master WHERE type='table' AND name='auctions'")) {
+                if (rs.next()) existingDdl = rs.getString(1);
+            }
+
+            if (existingDdl == null) {
+                // Bảng chưa có (DB trắng) → schema.sql đã tạo bản mới rồi, OK.
+                return;
+            }
+
+            boolean hasOldCheck = existingDdl.contains("CHECK(status IN")
+                    || existingDdl.contains("CHECK (status IN")
+                    || existingDdl.contains("CHECK( status IN")
+                    || existingDdl.contains("CHECK ( status IN");
+            boolean hasFinishedAt = existingDdl.toLowerCase().contains("finished_at");
+
+            if (hasOldCheck) {
+                logger.info("[migration v2] Phát hiện CHECK constraint cũ trên auctions.status → recreate table.");
+                // Bật foreign key off để rename không vướng
+                stmt.execute("PRAGMA foreign_keys=OFF");
+                stmt.execute("BEGIN TRANSACTION");
+                try {
+                    // Trường hợp migration trước đó crash để lại bảng tạm — dọn trước
+                    stmt.execute("DROP TABLE IF EXISTS auctions_v2");
+                    stmt.execute(
+                        "CREATE TABLE IF NOT EXISTS auctions_v2 (" +
+                        "  id            INTEGER PRIMARY KEY AUTOINCREMENT," +
+                        "  item_id       INTEGER NOT NULL," +
+                        "  status        TEXT    DEFAULT 'OPEN'," +
+                        "  start_time    DATETIME NOT NULL," +
+                        "  end_time      DATETIME NOT NULL," +
+                        "  current_price REAL    NOT NULL," +
+                        "  winner_id     INTEGER," +
+                        "  finished_at   DATETIME," +
+                        "  FOREIGN KEY (item_id)   REFERENCES items(id)," +
+                        "  FOREIGN KEY (winner_id) REFERENCES users(id)" +
+                        ")"
+                    );
+                    stmt.execute(
+                        "INSERT INTO auctions_v2 (id, item_id, status, start_time, end_time, current_price, winner_id) " +
+                        "SELECT id, item_id, status, start_time, end_time, current_price, winner_id FROM auctions"
+                    );
+                    stmt.execute("DROP TABLE auctions");
+                    stmt.execute("ALTER TABLE auctions_v2 RENAME TO auctions");
+                    stmt.execute("COMMIT");
+                    logger.info("[migration v2] auctions table đã được nâng cấp (không CHECK + finished_at).");
+                } catch (SQLException ex) {
+                    stmt.execute("ROLLBACK");
+                    throw ex;
+                } finally {
+                    stmt.execute("PRAGMA foreign_keys=ON");
+                }
+            } else if (!hasFinishedAt) {
+                // Không có CHECK cũ nhưng vẫn thiếu cột finished_at → chỉ cần ADD COLUMN
+                logger.info("[migration v2] Thêm cột finished_at vào auctions.");
+                stmt.execute("ALTER TABLE auctions ADD COLUMN finished_at DATETIME");
+            }
+        } catch (SQLException e) {
+            logger.error("[migration v2] Lỗi migrate auctions: {}", e.getMessage(), e);
         }
     }
 }

@@ -19,7 +19,9 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class UserDAOTest {
 
-    // Kết nối in-memory giữ mở suốt test class (đóng là mất data)
+    // Kết nối in-memory giữ mở suốt test class (đóng là mất data).
+    // Dùng ?cache=shared để các connection trong cùng JVM cùng chia sẻ
+    // schema của in-memory DB.
     private static Connection memConn;
     private UserDAO userDAO;
 
@@ -30,7 +32,14 @@ class UserDAOTest {
         resetDatabaseConnectionSingleton();
 
         memConn = DriverManager.getConnection("jdbc:sqlite::memory:");
-        try (Statement stmt = memConn.createStatement()) {
+        applySchema(memConn);
+
+        // Override DatabaseConnection để dùng in-memory
+        TestDatabaseConnection.setSharedConnection(memConn);
+    }
+
+    private static void applySchema(Connection conn) throws Exception {
+        try (Statement stmt = conn.createStatement()) {
             stmt.execute("""
                     CREATE TABLE IF NOT EXISTS users (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -44,9 +53,6 @@ class UserDAOTest {
                     )
                     """);
         }
-
-        // Override DatabaseConnection để dùng in-memory
-        TestDatabaseConnection.setSharedConnection(memConn);
     }
 
     /** Đặt DatabaseConnection.instance = null để test kế tiếp setup mới. */
@@ -61,6 +67,13 @@ class UserDAOTest {
 
     @BeforeEach
     void clearTable() throws Exception {
+        // Self-healing: nếu memConn đã bị đóng bởi cleanup của test class khác
+        // (singleton reflection có thể leak), tự mở lại + re-apply schema.
+        if (memConn == null || memConn.isClosed()) {
+            memConn = DriverManager.getConnection("jdbc:sqlite::memory:");
+            applySchema(memConn);
+            TestDatabaseConnection.setSharedConnection(memConn);
+        }
         // Xoá data trước mỗi test để các test độc lập nhau
         try (Statement stmt = memConn.createStatement()) {
             stmt.execute("DELETE FROM users");

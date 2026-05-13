@@ -258,10 +258,16 @@ public class ClientHandler implements Runnable { // implements Runnable để bi
             if (success) {
                 logger.info("Bid thành công: auctionId={}, bidderId={}, amount={}", auctionId, bidderId, amount);
 
+                // Lấy thông tin item 1 lần để dùng cho cả 2 notification
+                AuctionDAO.AuctionRow row = auctionDAO.getAuctionById(auctionId);
+                String itemName = (row != null && row.itemName != null) ? row.itemName : "phiên #" + auctionId;
+
+                // Thông báo cho chính bidder: đã đặt giá thành công
+                NotificationHub.getInstance().notifyBidPlaced(
+                        bidderId, itemName, auctionId, amount);
+
                 // Thông báo cho bidder cũ vừa bị vượt giá
                 if (prevWinnerId > 0 && prevWinnerId != bidderId) {
-                    AuctionDAO.AuctionRow row = auctionDAO.getAuctionById(auctionId);
-                    String itemName = (row != null && row.itemName != null) ? row.itemName : "phiên #" + auctionId;
                     NotificationHub.getInstance().notifyOutbid(
                             prevWinnerId, itemName, auctionId, bidder.getFullname(), amount);
                 }
@@ -733,32 +739,49 @@ public class ClientHandler implements Runnable { // implements Runnable để bi
 
             AuctionDAO.AuctionRow row = auctionDAO.getAuctionById(auctionId);
             if (row == null) return new Response("FAIL", "Phiên không tồn tại", null);
-            if (!"FINISHED".equalsIgnoreCase(row.status)) {
-                return new Response("FAIL", "Phiên không ở trạng thái cần hoàn thiện (status=" + row.status + ")", null);
+            // Chấp nhận cả FINISHED và PAID (cho phép update lại thông tin sau khi đã hoàn thiện)
+            if (!"FINISHED".equalsIgnoreCase(row.status) && !"PAID".equalsIgnoreCase(row.status)) {
+                return new Response("FAIL",
+                        "Phiên không ở trạng thái cần hoàn thiện (status=" + row.status + ")", null);
             }
             if (row.winnerId != bidderId) {
                 return new Response("FAIL", "Bạn không phải người thắng phiên này", null);
             }
 
+            // Validate dữ liệu cơ bản trước khi ghi DB
+            String fullName = getStringOr(data, "fullName", "").trim();
+            String phone    = getStringOr(data, "phone", "").trim();
+            String address  = getStringOr(data, "address", "").trim();
+            String method   = getStringOr(data, "paymentMethod", "COD").trim();
+            String bankAcc  = getStringOr(data, "bankAccount", "").trim();
+            if (fullName.isEmpty() || phone.isEmpty() || address.isEmpty()) {
+                return new Response("FAIL",
+                        "Vui lòng nhập đầy đủ họ tên, số điện thoại và địa chỉ.", null);
+            }
+
             BidderInfoDAO.BidderInfo info = new BidderInfoDAO.BidderInfo();
             info.auctionId     = auctionId;
             info.bidderId      = bidderId;
-            info.fullName      = getStringOr(data, "fullName", "");
-            info.phone         = getStringOr(data, "phone", "");
-            info.address       = getStringOr(data, "address", "");
-            info.paymentMethod = getStringOr(data, "paymentMethod", "COD");
-            info.bankAccount   = getStringOr(data, "bankAccount", "");
+            info.fullName      = fullName;
+            info.phone         = phone;
+            info.address       = address;
+            info.paymentMethod = method;
+            info.bankAccount   = bankAcc;
 
             if (!bidderInfoDAO.upsert(info)) {
-                return new Response("ERROR", "Không thể lưu thông tin hoàn thiện", null);
+                logger.error("Upsert bidder_info thất bại: auctionId={}, bidderId={}, fullName={}, phone={}",
+                        auctionId, bidderId, fullName, phone);
+                return new Response("ERROR",
+                        "Không thể lưu thông tin hoàn thiện (kiểm tra log server để biết chi tiết)", null);
             }
-            // Chuyển auction sang PAID
-            auctionDAO.updateStatus(auctionId, "PAID");
-            // Cập nhật item status: SOLD (giữ nguyên — đã set khi FINISHED)
-            // Notify seller
+            // Chuyển auction sang PAID (nếu chưa)
+            if (!"PAID".equalsIgnoreCase(row.status)) {
+                auctionDAO.updateStatus(auctionId, "PAID");
+            }
+            // Notify seller (chỉ gửi khi chuyển từ FINISHED → PAID lần đầu để tránh spam)
             int sellerId = auctionDAO.getSellerIdForAuction(auctionId);
             String itemName = row.itemName != null ? row.itemName : "phiên #" + auctionId;
-            if (sellerId > 0) {
+            if (sellerId > 0 && !"PAID".equalsIgnoreCase(row.status)) {
                 NotificationHub.getInstance().notifyAuctionPaidToSeller(sellerId, itemName, auctionId);
             }
 
@@ -768,7 +791,7 @@ public class ClientHandler implements Runnable { // implements Runnable để bi
             return new Response("SUCCESS", "Đã hoàn thiện thông tin thành công!", result.toString());
         } catch (Exception e) {
             logger.error("Lỗi COMPLETE_AUCTION_INFO", e);
-            return new Response("ERROR", "Dữ liệu không hợp lệ", null);
+            return new Response("ERROR", "Dữ liệu không hợp lệ: " + e.getMessage(), null);
         }
     }
 

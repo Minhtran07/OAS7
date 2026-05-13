@@ -220,10 +220,13 @@ public class ControllerNotification {
         return switch (type) {
             case "LOGIN_SUCCESS"          -> "🟢";
             case "ITEM_LISTED"            -> "📦";
+            case "BID_PLACED"             -> "💰";
             case "BID_OUTBID"             -> "⚠️";
             case "AUTO_BID_MAX_REACHED"   -> "🤖";
             case "AUCTION_FINISHED"       -> "🏁";
             case "AUCTION_WON"            -> "🏆";
+            case "AUCTION_LOST"           -> "🥈";
+            case "AUCTION_RESULT_SELLER"  -> "📣";
             case "AUCTION_PAID"           -> "✅";
             case "AUCTION_CANCELED"       -> "❌";
             case "INFO_COMPLETION_FAILED" -> "⏰";

@@ -118,14 +118,27 @@ public class NotificationHub {
     public void notifyItemListed(int sellerId, String itemName, int auctionId, int itemId) {
         notifyUser(sellerId, NotificationType.ITEM_LISTED,
                 "Sản phẩm đã được đưa lên đấu giá",
-                "Sản phẩm \"" + itemName + "\" đã được đưa lên đấu giá.",
+                "Sản phẩm \"" + itemName + "\" đã được đăng lên phiên đấu giá #"
+                        + auctionId + " thành công.",
                 auctionId, itemId);
+    }
+
+    /**
+     * (Bidder) Đặt giá thành công cho 1 phiên.
+     */
+    public void notifyBidPlaced(int bidderId, String itemName, int auctionId, double amount) {
+        notifyUser(bidderId, NotificationType.BID_PLACED,
+                "Đã đặt giá thành công",
+                "Bạn đã đấu giá thành công sản phẩm \"" + itemName
+                        + "\" với giá " + formatVnd(amount) + ".",
+                auctionId, null);
     }
 
     public void notifyOutbid(int previousBidderId, String itemName, int auctionId,
                              String newBidderName, double newAmount) {
         String msg = "Mức đấu giá của bạn cho \"" + itemName + "\" đã bị vượt qua: "
-                + newBidderName + " đã đặt " + formatVnd(newAmount);
+                + newBidderName + " vừa đặt " + formatVnd(newAmount)
+                + ". Hãy vào lại phiên để đặt giá tiếp nếu bạn vẫn quan tâm!";
         notifyUser(previousBidderId, NotificationType.BID_OUTBID,
                 "Bạn đã bị vượt giá", msg, auctionId, null);
     }
@@ -144,10 +157,48 @@ public class NotificationHub {
                 auctionId, null);
     }
 
+    /**
+     * Thông báo kết quả cho 1 bidder THUA — biết được người thắng cuộc.
+     * Gửi đồng thời cho tất cả các bidder không phải winner trong phiên.
+     */
+    public void notifyAuctionLost(int bidderId, String itemName, int auctionId,
+                                  String winnerName, double finalPrice) {
+        String winnerLabel = (winnerName == null || winnerName.isBlank())
+                ? "(không có người thắng)" : winnerName;
+        notifyUser(bidderId, NotificationType.AUCTION_LOST,
+                "Phiên đấu giá đã kết thúc",
+                "Phiên đấu giá \"" + itemName + "\" (phiên #" + auctionId + ") đã kết thúc. "
+                        + "Người thắng cuộc là " + winnerLabel
+                        + " với giá " + formatVnd(finalPrice) + ".",
+                auctionId, null);
+    }
+
+    /**
+     * (Seller) Thông báo kết quả phiên đấu giá: ai là người thắng cuộc.
+     * Nếu không có ai bid thì winnerName = null.
+     */
+    public void notifyAuctionResultForSeller(int sellerId, String itemName, int auctionId,
+                                             String winnerName, double finalPrice) {
+        String title, msg;
+        if (winnerName == null || winnerName.isBlank()) {
+            title = "Phiên đấu giá kết thúc — không có người thắng";
+            msg = "Phiên đấu giá #" + auctionId + " với sản phẩm \"" + itemName
+                    + "\" đã kết thúc nhưng không có người đặt giá.";
+        } else {
+            title = "Phiên đấu giá đã có người thắng";
+            msg = "Người chiến thắng phiên đấu giá #" + auctionId
+                    + " với sản phẩm \"" + itemName + "\" là " + winnerName
+                    + " (giá thắng: " + formatVnd(finalPrice) + ").";
+        }
+        notifyUser(sellerId, NotificationType.AUCTION_RESULT_SELLER,
+                title, msg, auctionId, null);
+    }
+
     public void notifyAuctionWon(int winnerId, String itemName, int auctionId, double finalPrice) {
         notifyUser(winnerId, NotificationType.AUCTION_WON,
                 "Bạn đã thắng phiên đấu giá!",
-                "Bạn đã thắng \"" + itemName + "\" với giá " + formatVnd(finalPrice)
+                "Chúc mừng! Bạn đã thắng \"" + itemName + "\" (phiên #" + auctionId
+                        + ") với giá " + formatVnd(finalPrice)
                         + ". Vui lòng hoàn thiện thông tin trong thời hạn để hoàn tất giao dịch.",
                 auctionId, null);
     }

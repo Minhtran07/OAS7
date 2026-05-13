@@ -29,40 +29,76 @@ public class BidderInfoDAO {
 
     /**
      * Insert (replace) bidder_info cho 1 auction.
-     * Vì có UNIQUE(auction_id), dùng INSERT OR REPLACE.
+     * Vì có UNIQUE(auction_id), thực hiện chiến lược "try-UPDATE-then-INSERT":
+     *  - Nếu đã tồn tại record cho auction_id → UPDATE (giữ nguyên id).
+     *  - Nếu chưa có → INSERT mới.
      *
-     * Lưu ý: KHÔNG dùng Statement.RETURN_GENERATED_KEYS — với INSERT OR REPLACE
-     * trên SQLite, một số phiên bản JDBC trả về behavior không nhất quán
-     * (id cũ vs id mới). Ta query lại id bằng SELECT cho an toàn.
+     * Lý do KHÔNG dùng "INSERT OR REPLACE": trên một số bản SQLite + JDBC,
+     * REPLACE thực hiện DELETE + INSERT trong cùng câu, vi phạm FOREIGN KEY
+     * (bidder_info.auction_id) khi PRAGMA foreign_keys=ON → executeUpdate()
+     * trả về 0 hoặc ném SQLException, làm upsert trả false dù dữ liệu hợp lệ.
+     * Chiến lược UPDATE/INSERT thuần đơn giản và đáng tin cậy hơn.
      */
     public boolean upsert(BidderInfo info) {
-        String sql = "INSERT OR REPLACE INTO bidder_info " +
-                "(auction_id, bidder_id, full_name, phone, address, payment_method, bank_account, completed_at) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))";
-        try (Connection conn = DatabaseConnection.getInstance().getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setInt(1, info.auctionId);
-            ps.setInt(2, info.bidderId);
-            ps.setString(3, info.fullName);
-            ps.setString(4, info.phone);
-            ps.setString(5, info.address);
-            ps.setString(6, info.paymentMethod);
-            ps.setString(7, info.bankAccount);
-            int rows = ps.executeUpdate();
-            if (rows == 0) {
-                logger.warn("upsert bidder_info: executeUpdate trả về 0 rows (auctionId={}, bidderId={})",
-                        info.auctionId, info.bidderId);
-                return false;
-            }
-            // Query lại id (UNIQUE auction_id nên 1 row)
+        try (Connection conn = DatabaseConnection.getInstance().getConnection()) {
+            // 1) Kiểm tra đã tồn tại chưa
+            int existingId = -1;
             try (PreparedStatement q = conn.prepareStatement(
                     "SELECT id FROM bidder_info WHERE auction_id=?")) {
                 q.setInt(1, info.auctionId);
                 try (ResultSet rs = q.executeQuery()) {
-                    if (rs.next()) info.id = rs.getInt(1);
+                    if (rs.next()) existingId = rs.getInt(1);
                 }
             }
-            return true;
+
+            if (existingId > 0) {
+                // 2a) UPDATE
+                String sql = "UPDATE bidder_info SET bidder_id=?, full_name=?, phone=?, "
+                        + "address=?, payment_method=?, bank_account=?, "
+                        + "completed_at=datetime('now','localtime') WHERE auction_id=?";
+                try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                    ps.setInt(1, info.bidderId);
+                    ps.setString(2, info.fullName != null ? info.fullName : "");
+                    ps.setString(3, info.phone    != null ? info.phone    : "");
+                    ps.setString(4, info.address  != null ? info.address  : "");
+                    ps.setString(5, info.paymentMethod != null ? info.paymentMethod : "COD");
+                    ps.setString(6, info.bankAccount   != null ? info.bankAccount   : "");
+                    ps.setInt(7, info.auctionId);
+                    int rows = ps.executeUpdate();
+                    if (rows <= 0) {
+                        logger.warn("upsert bidder_info UPDATE trả về 0 rows (auctionId={})",
+                                info.auctionId);
+                        return false;
+                    }
+                    info.id = existingId;
+                    return true;
+                }
+            } else {
+                // 2b) INSERT mới
+                String sql = "INSERT INTO bidder_info "
+                        + "(auction_id, bidder_id, full_name, phone, address, payment_method, bank_account, completed_at) "
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))";
+                try (PreparedStatement ps = conn.prepareStatement(sql,
+                        java.sql.Statement.RETURN_GENERATED_KEYS)) {
+                    ps.setInt(1, info.auctionId);
+                    ps.setInt(2, info.bidderId);
+                    ps.setString(3, info.fullName != null ? info.fullName : "");
+                    ps.setString(4, info.phone    != null ? info.phone    : "");
+                    ps.setString(5, info.address  != null ? info.address  : "");
+                    ps.setString(6, info.paymentMethod != null ? info.paymentMethod : "COD");
+                    ps.setString(7, info.bankAccount   != null ? info.bankAccount   : "");
+                    int rows = ps.executeUpdate();
+                    if (rows <= 0) {
+                        logger.warn("upsert bidder_info INSERT trả về 0 rows (auctionId={}, bidderId={})",
+                                info.auctionId, info.bidderId);
+                        return false;
+                    }
+                    try (ResultSet keys = ps.getGeneratedKeys()) {
+                        if (keys.next()) info.id = keys.getInt(1);
+                    }
+                    return true;
+                }
+            }
         } catch (SQLException e) {
             logger.error("Lỗi upsert bidder_info (auctionId={}, bidderId={}): {}",
                     info.auctionId, info.bidderId, e.getMessage(), e);

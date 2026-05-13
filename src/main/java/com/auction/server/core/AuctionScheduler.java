@@ -136,16 +136,28 @@ public class AuctionScheduler {
                         finalPrice)
         );
 
-        // 4. Notification: cho TẤT CẢ bidder từng tham gia phiên này
+        // 4. Notification: cho TẤT CẢ người liên quan đến phiên này
+        //    - Winner   → AUCTION_WON (kèm finalPrice, link hoàn thiện)
+        //    - Loser    → AUCTION_LOST (kèm tên winner + finalPrice)
+        //    - Seller   → AUCTION_RESULT_SELLER (kèm tên winner + finalPrice)
         final String nameForMsg = (itemName != null) ? itemName : "phiên #" + auctionId;
+        final String winnerNameFinal = winnerName;
         try {
             List<Integer> bidders = auctionDAO.getBidderIdsForAuction(auctionId);
             for (int b : bidders) {
-                NotificationHub.getInstance().notifyAuctionFinishedForBidder(b, nameForMsg, auctionId);
+                if (b == winnerId) continue; // winner sẽ nhận AUCTION_WON riêng
+                NotificationHub.getInstance().notifyAuctionLost(
+                        b, nameForMsg, auctionId, winnerNameFinal, finalPrice);
             }
             // Notification riêng cho winner
             if (winnerId > 0) {
                 NotificationHub.getInstance().notifyAuctionWon(winnerId, nameForMsg, auctionId, finalPrice);
+            }
+            // Notification cho seller — kết quả phiên đấu giá
+            int sellerId = auctionDAO.getSellerIdForAuction(auctionId);
+            if (sellerId > 0) {
+                NotificationHub.getInstance().notifyAuctionResultForSeller(
+                        sellerId, nameForMsg, auctionId, winnerNameFinal, finalPrice);
             }
         } catch (Throwable t) {
             logger.warn("Không thể gửi notification kết thúc phiên #{}: {}", auctionId, t.getMessage());

@@ -33,6 +33,9 @@ class AuctionManagerAutoBidTest {
     @BeforeEach
     void setUp() {
         manager = AuctionManager.getInstance();
+        // Clear DAO để các test khác (AtomicBidTest) không gây leak singleton DAO.
+        // Auto-bid test chỉ kiểm tra logic RAM.
+        manager.setDaos(null, null);
         sampleItem = new Art(1, "ART", "Test Item", 10, "Desc",
                 500_000.0, 500_000.0, "Artist", "Oil");
     }

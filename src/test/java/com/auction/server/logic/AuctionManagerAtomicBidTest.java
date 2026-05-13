@@ -59,6 +59,11 @@ class AuctionManagerAtomicBidTest {
         // Reset singleton để class kế tiếp tự inject connection riêng.
         if (memConn != null && !memConn.isClosed()) memConn.close();
         resetDatabaseConnectionSingleton();
+        // Quan trọng: clear DAO trong AuctionManager singleton để không leak
+        // sang test class chạy sau (AuctionManagerTest/AntiSnipeTest/AutoBidTest
+        // không setDaos và sẽ thừa kế DAO này nếu không clear → mọi placeBid
+        // sẽ thử ghi DB qua DatabaseConnection.getInstance() mặc định và rollback).
+        AuctionManager.getInstance().setDaos(null, null);
     }
 
     /** Đặt DatabaseConnection.instance = null để test kế tiếp setup mới. */

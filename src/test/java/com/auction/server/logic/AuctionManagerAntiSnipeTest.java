@@ -35,6 +35,10 @@ class AuctionManagerAntiSnipeTest {
     @BeforeEach
     void setUp() {
         manager = AuctionManager.getInstance();
+        // Quan trọng: clear DAO để các class test trước đó (vd AtomicBidTest) không
+        // gây leak. Test này chỉ kiểm tra logic RAM (anti-snipe + snapshot), không
+        // cần ghi DB. AuctionManager.placeBid skip phần ghi DB khi auctionDAO == null.
+        manager.setDaos(null, null);
         sampleItem = new Art(1, "ART", "Test Item", 10, "Desc",
                 500_000.0, 500_000.0, "Artist", "Oil");
     }

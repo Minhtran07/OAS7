@@ -35,6 +35,10 @@ class AuctionManagerTest {
     @BeforeEach
     void setUp() {
         manager = AuctionManager.getInstance();
+        // Clear DAO để các test khác (AtomicBidTest) không gây leak singleton DAO,
+        // dẫn tới mọi placeBid bị rollback do DB không có schema trong CI.
+        // Test này chỉ kiểm tra logic RAM (thread-safety, lost-update).
+        manager.setDaos(null, null);
         sampleItem = new Art(1, "ART", "Test Item", 10, "Desc",
                 500_000.0, 500_000.0, "Artist", "Oil");
     }

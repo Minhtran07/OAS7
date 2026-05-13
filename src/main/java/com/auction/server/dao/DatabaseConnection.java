@@ -68,39 +68,123 @@ public class DatabaseConnection {
     /**
      * Đọc schema.sql từ classpath và thực thi để tạo các bảng còn thiếu.
      * Sử dụng CREATE TABLE IF NOT EXISTS nên không ảnh hưởng dữ liệu đã có.
+     *
+     * Robust: từng statement được try/catch riêng, một câu lỗi không làm
+     * abort các câu còn lại. Cuối cùng verify các bảng v2 (notifications,
+     * bidder_info) thực sự tồn tại; nếu thiếu thì tạo trực tiếp.
      */
     protected void initSchema() {
+        // 1. Migration v2 cho bảng auctions cũ (drop CHECK + add finished_at)
+        //    Phải chạy TRƯỚC khi đọc schema.sql, vì schema.sql chỉ có CREATE IF NOT EXISTS
+        //    sẽ không update bảng đã có.
+        try {
+            migrateAuctionsTableForV2();
+        } catch (Throwable t) {
+            logger.error("[initSchema] Migration v2 thất bại: {}", t.getMessage(), t);
+        }
+
+        // 2. Chạy schema.sql (CREATE IF NOT EXISTS cho mọi bảng)
         try (InputStream is = getClass().getClassLoader()
                                         .getResourceAsStream("server/db/schema.sql")) {
             if (is == null) {
                 logger.warn("Không tìm thấy schema.sql trong classpath — bỏ qua init DB.");
-                return;
-            }
-
-            String sql = new BufferedReader(new InputStreamReader(is))
-                    .lines()
-                    .collect(Collectors.joining("\n"));
-
-            try (Connection conn = getConnection();
-                 Statement stmt = conn.createStatement()) {
-
-                // Tách các câu lệnh SQL theo dấu ";"
-                for (String statement : sql.split(";")) {
-                    String trimmed = statement.trim();
-                    if (!trimmed.isEmpty()) {
-                        stmt.execute(trimmed);
+            } else {
+                String sql = new BufferedReader(new InputStreamReader(is))
+                        .lines()
+                        .collect(Collectors.joining("\n"));
+                try (Connection conn = getConnection();
+                     Statement stmt = conn.createStatement()) {
+                    int ok = 0, fail = 0;
+                    for (String statement : sql.split(";")) {
+                        String trimmed = statement.trim();
+                        if (trimmed.isEmpty()) continue;
+                        // Bỏ qua block chỉ chứa comment (-- ...). Mỗi statement có thể
+                        // có comment xen kẽ -- để không, SQLite cho phép, nhưng để chắc:
+                        if (trimmed.startsWith("--") && !trimmed.contains("\n")) continue;
+                        try {
+                            stmt.execute(trimmed);
+                            ok++;
+                        } catch (SQLException ex) {
+                            fail++;
+                            logger.warn("[initSchema] Lỗi statement: {} → {}",
+                                    trimmed.substring(0, Math.min(80, trimmed.length())),
+                                    ex.getMessage());
+                        }
                     }
+                    logger.info("[initSchema] Đã chạy {} statements thành công, {} lỗi.", ok, fail);
                 }
-                logger.info("Schema DB đã được khởi tạo thành công.");
             }
-
-            // Sau khi schema base đã có → chạy migration v2 (PAID/CANCELED).
-            migrateAuctionsTableForV2();
-
         } catch (IOException e) {
             logger.error("Lỗi đọc schema.sql: {}", e.getMessage());
         } catch (SQLException e) {
-            logger.error("Lỗi thực thi schema SQL: {}", e.getMessage());
+            logger.error("Lỗi mở connection: {}", e.getMessage());
+        }
+
+        // 3. Đảm bảo bảng v2 (notifications, bidder_info) thực sự tồn tại.
+        ensureV2Tables();
+    }
+
+    /**
+     * Verify-and-create cho các bảng v2. Có thể do schema.sql parse split-by-;
+     * trên một số môi trường không tạo đầy đủ — ở đây ta đảm bảo tường minh.
+     */
+    private void ensureV2Tables() {
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement()) {
+
+            // notifications
+            stmt.execute(
+                "CREATE TABLE IF NOT EXISTS notifications (" +
+                "  id                  INTEGER PRIMARY KEY AUTOINCREMENT," +
+                "  user_id             INTEGER NOT NULL," +
+                "  type                TEXT    NOT NULL," +
+                "  title               TEXT    NOT NULL," +
+                "  message             TEXT," +
+                "  related_auction_id  INTEGER," +
+                "  related_item_id     INTEGER," +
+                "  is_read             INTEGER DEFAULT 0," +
+                "  created_at          DATETIME DEFAULT (datetime('now','localtime'))," +
+                "  FOREIGN KEY (user_id)            REFERENCES users(id)," +
+                "  FOREIGN KEY (related_auction_id) REFERENCES auctions(id)," +
+                "  FOREIGN KEY (related_item_id)    REFERENCES items(id)" +
+                ")"
+            );
+            stmt.execute(
+                "CREATE INDEX IF NOT EXISTS idx_notifications_user " +
+                "ON notifications(user_id, is_read)"
+            );
+
+            // bidder_info
+            stmt.execute(
+                "CREATE TABLE IF NOT EXISTS bidder_info (" +
+                "  id              INTEGER PRIMARY KEY AUTOINCREMENT," +
+                "  auction_id      INTEGER NOT NULL UNIQUE," +
+                "  bidder_id       INTEGER NOT NULL," +
+                "  full_name       TEXT," +
+                "  phone           TEXT," +
+                "  address         TEXT," +
+                "  payment_method  TEXT," +
+                "  bank_account    TEXT," +
+                "  completed_at    DATETIME DEFAULT (datetime('now','localtime'))," +
+                "  FOREIGN KEY (auction_id) REFERENCES auctions(id)," +
+                "  FOREIGN KEY (bidder_id)  REFERENCES users(id)" +
+                ")"
+            );
+
+            // Log trạng thái
+            int nCount = -1, bCount = -1;
+            try (var rs = stmt.executeQuery(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='notifications'")) {
+                if (rs.next()) nCount = rs.getInt(1);
+            }
+            try (var rs = stmt.executeQuery(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='bidder_info'")) {
+                if (rs.next()) bCount = rs.getInt(1);
+            }
+            logger.info("[initSchema] Verify v2 tables: notifications={}, bidder_info={} (1=tồn tại)",
+                    nCount, bCount);
+        } catch (SQLException e) {
+            logger.error("[initSchema] Lỗi ensureV2Tables: {}", e.getMessage(), e);
         }
     }
 

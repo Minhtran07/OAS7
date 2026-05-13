@@ -7,7 +7,6 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
 
 /**
  * DAO cho bảng bidder_info — thông tin "hoàn thiện" của winner.
@@ -31,13 +30,17 @@ public class BidderInfoDAO {
     /**
      * Insert (replace) bidder_info cho 1 auction.
      * Vì có UNIQUE(auction_id), dùng INSERT OR REPLACE.
+     *
+     * Lưu ý: KHÔNG dùng Statement.RETURN_GENERATED_KEYS — với INSERT OR REPLACE
+     * trên SQLite, một số phiên bản JDBC trả về behavior không nhất quán
+     * (id cũ vs id mới). Ta query lại id bằng SELECT cho an toàn.
      */
     public boolean upsert(BidderInfo info) {
         String sql = "INSERT OR REPLACE INTO bidder_info " +
                 "(auction_id, bidder_id, full_name, phone, address, payment_method, bank_account, completed_at) " +
                 "VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))";
         try (Connection conn = DatabaseConnection.getInstance().getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+             PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, info.auctionId);
             ps.setInt(2, info.bidderId);
             ps.setString(3, info.fullName);
@@ -46,13 +49,23 @@ public class BidderInfoDAO {
             ps.setString(6, info.paymentMethod);
             ps.setString(7, info.bankAccount);
             int rows = ps.executeUpdate();
-            if (rows == 0) return false;
-            try (ResultSet keys = ps.getGeneratedKeys()) {
-                if (keys.next()) info.id = keys.getInt(1);
+            if (rows == 0) {
+                logger.warn("upsert bidder_info: executeUpdate trả về 0 rows (auctionId={}, bidderId={})",
+                        info.auctionId, info.bidderId);
+                return false;
+            }
+            // Query lại id (UNIQUE auction_id nên 1 row)
+            try (PreparedStatement q = conn.prepareStatement(
+                    "SELECT id FROM bidder_info WHERE auction_id=?")) {
+                q.setInt(1, info.auctionId);
+                try (ResultSet rs = q.executeQuery()) {
+                    if (rs.next()) info.id = rs.getInt(1);
+                }
             }
             return true;
         } catch (SQLException e) {
-            logger.error("Lỗi upsert bidder_info", e);
+            logger.error("Lỗi upsert bidder_info (auctionId={}, bidderId={}): {}",
+                    info.auctionId, info.bidderId, e.getMessage(), e);
             return false;
         }
     }

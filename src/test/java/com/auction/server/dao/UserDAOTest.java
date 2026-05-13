@@ -67,18 +67,34 @@ class UserDAOTest {
 
     @BeforeEach
     void clearTable() throws Exception {
-        // Self-healing: nếu memConn đã bị đóng bởi cleanup của test class khác
-        // (singleton reflection có thể leak), tự mở lại + re-apply schema.
-        if (memConn == null || memConn.isClosed()) {
-            memConn = DriverManager.getConnection("jdbc:sqlite::memory:");
-            applySchema(memConn);
-            TestDatabaseConnection.setSharedConnection(memConn);
-        }
-        // Xoá data trước mỗi test để các test độc lập nhau
+        // Self-healing 2 lớp:
+        //  1. Check isClosed() → mở lại nếu đã đóng.
+        //  2. Try DELETE; nếu vẫn ném SQLException ("database connection closed"
+        //     có thể xảy ra ngay cả khi isClosed() trả false do SQLite driver state)
+        //     → force-reopen và retry.
+        ensureOpen();
         try (Statement stmt = memConn.createStatement()) {
             stmt.execute("DELETE FROM users");
+        } catch (java.sql.SQLException ex) {
+            // Retry sau khi force-reopen
+            forceReopen();
+            try (Statement stmt = memConn.createStatement()) {
+                stmt.execute("DELETE FROM users");
+            }
         }
         userDAO = new UserDAO();
+    }
+
+    private static void ensureOpen() throws Exception {
+        if (memConn == null || memConn.isClosed()) {
+            forceReopen();
+        }
+    }
+
+    private static void forceReopen() throws Exception {
+        memConn = DriverManager.getConnection("jdbc:sqlite::memory:");
+        applySchema(memConn);
+        TestDatabaseConnection.setSharedConnection(memConn);
     }
 
     @AfterAll
